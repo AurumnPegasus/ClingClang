@@ -20,19 +20,12 @@
 ;; uniquify body with environment e1
 
 (define (insert-between v xs)
-
   (cond ((null? xs) xs)
-
         ((null? (cdr xs)) xs)
-
         (else (cons (car xs)
-
                     (cons v (insert-between v (cdr xs)))))))
 
-
-
 (define (display-all . vs)
-
   (for-each display (insert-between " " vs)))
 
 (define (uniquify p)
