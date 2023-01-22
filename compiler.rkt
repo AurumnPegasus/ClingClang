@@ -10,8 +10,51 @@
 (provide (all-defined-out))
 
 ;; uniquify : R1 -> R1
+
+;; 
+;; maintain a hash-table for env
+;; env - e0
+;; Let x exp body
+;; Uniquify exp using e0
+;; create e1 by adding x->x' to e0; change x->x'
+;; uniquify body with environment e1
+
+(define (insert-between v xs)
+
+  (cond ((null? xs) xs)
+
+        ((null? (cdr xs)) xs)
+
+        (else (cons (car xs)
+
+                    (cons v (insert-between v (cdr xs)))))))
+
+
+
+(define (display-all . vs)
+
+  (for-each display (insert-between " " vs)))
+
 (define (uniquify p)
-  (error "TODO: code goes here (uniquify)"))
+  (define (uniquify-e e [ht (make-hash)])
+    (match e
+      [(Int n) (Int n)]
+      [(Var x) (
+                cond
+                 [(hash-has-key? ht x) (Var (hash-ref ht x))]
+                 [else (Var x)]
+                 )]
+      [(Let x exp body)
+       (let ([exp_new (uniquify-e exp ht)] [x_new (gensym x)])
+         (begin
+           (hash-set! ht x x_new)
+           (Let x_new exp_new (uniquify-e body ht))
+           ))]
+      [(Prim op es) (Prim op (for/list ([i es]) (uniquify-e i ht)))]
+      [_ (error "Nothing matches")]))
+  (match p
+    [(Program info body)
+     (Program info (uniquify-e body))]))
 
 ;; remove-complex-opera* : R1 -> R1
 (define (remove-complex-opera* p)
@@ -26,8 +69,8 @@
 ;; must be named "compiler.rkt"
 (define compiler-passes
   `( 
-     ;; Uncomment the following passes as you finish them.
-     ;; ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
-     ;; ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
-     ;; ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
-     ))
+    ;; Uncomment the following passes as you finish them.
+    ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
+    ;; ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
+    ;; ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
+    ))
