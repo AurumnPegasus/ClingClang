@@ -39,8 +39,7 @@
   (define (uniquify-e e [ht (make-hash)])
     (match e
       [(Int n) (Int n)]
-      [(Var x) (
-                cond
+      [(Var x) (cond
                  [(hash-has-key? ht x) (Var (hash-ref ht x))]
                  [else (Var x)]
                  )]
