@@ -50,7 +50,36 @@
 
 ;; remove-complex-opera* : R1 -> R1
 (define (remove-complex-opera* p)
-  (error "TODO: code goes here (remove-complex-opera*)"))
+  (define (is-atomic? e)
+    (match e
+    [(Int n) #t]
+    [(Var x) #t]
+    [_ #f]))
+
+  (define varlst `())
+
+  (define (flatten e)
+    (match e
+      [(Prim op es) (Prim op (for/list ([i es])
+                               (cond
+                                 [(is-atomic? i) i]
+                                 [else
+                                  (append varlst (list (gensym `g) (flatten i)))])))]
+      ))
+
+  (define (final-flat e)
+    (let ([fexpr (flatten e)])
+      (define (final-flat-r lst)
+        (cond
+          [(null? e) fexpr]
+          [else
+           (Let (car (car varlst)) (car (cdr (car varlst))) (final-flat-r (cdr varlst)))]))
+      (final-flat-r varlst)))
+
+  (match p
+    [(Program info body) (Program info (final-flat body))])
+)
+  
 
 ;; explicate-control : R1 -> C0
 (define (explicate-control p)
