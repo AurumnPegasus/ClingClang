@@ -55,26 +55,30 @@
     [(Int n) #t]
     [(Var x) #t]
     [_ #f]))
-
-  (define varlst `())
-
-  (define (flatten e)
+  
+  (define (flatten e [varlst '()])
+    (display e)
     (match e
-      [(Prim op es) (Prim op (for/list ([i es])
-                               (cond
-                                 [(is-atomic? i) i]
-                                 [else
-                                  (append varlst (list (gensym `g) (flatten i)))])))]
+      [(? is-atomic? i) (list i varlst)]
+      [(Prim op es) (list (Prim op (for/list ([i es])
+                                (cond
+                                  [(is-atomic? i) i]
+                                  [else
+                                   (let ([new_var (Var (gensym 'g))] [ret_lst (flatten i)])
+                                     (begin (set! varlst (append (cdr ret_lst) varlst ))
+                                            new_var)
+                                         )]))) varlst)]
       ))
 
   (define (final-flat e)
     (let ([fexpr (flatten e)])
+      (display fexpr)
       (define (final-flat-r lst)
         (cond
-          [(null? e) fexpr]
+          [(null? lst) (car fexpr)]
           [else
-           (Let (car (car varlst)) (car (cdr (car varlst))) (final-flat-r (cdr varlst)))]))
-      (final-flat-r varlst)))
+           (Let (car (car lst)) (car (cdr (car lst))) (final-flat-r (cdr lst)))]))
+      (final-flat-r (cadr fexpr))))
 
   (match p
     [(Program info body) (Program info (final-flat body))])
@@ -92,6 +96,6 @@
   `( 
     ;; Uncomment the following passes as you finish them.
     ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
-    ;; ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
+    ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
     ;; ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
     ))
