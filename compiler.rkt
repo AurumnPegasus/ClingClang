@@ -43,25 +43,25 @@
 (define (remove-complex-opera* p)
   (define (is-atomic? e)
     (match e
-    [(Int n) #t]
-    [(Var x) #t]
-    [_ #f]))
+      [(Int n) #t]
+      [(Var x) #t]
+      [_ #f]))
   
   (define (flatten e [varlst '()])
     ;;(display-all " e " e)
     (match e
       [(? is-atomic? i) (list i varlst)]
       [(Let x exp body) (list (let ([fb (flatten body)] [fe (flatten exp)])
-                          (begin (set! varlst (append (cadr fe) (list (list x (car fe))) (cadr fb)))
-                                 (car fb))) varlst)]
+                                (begin (set! varlst (append (cadr fe) (list (list x (car fe))) (cadr fb)))
+                                       (car fb))) varlst)]
       [(Prim op es) (list (Prim op (for/list ([i es])
-                                (cond
-                                  [(is-atomic? i) i]
-                                  [else
-                                   (let ([new_var (gensym 'g)] [ret_lst (flatten i)])
-                                     (begin (set! varlst (append (cadr ret_lst) (list (list new_var (car ret_lst))) varlst ))
-                                            (Var new_var))
-                                         )]))) varlst)]
+                                     (cond
+                                       [(is-atomic? i) i]
+                                       [else
+                                        (let ([new_var (gensym 'g)] [ret_lst (flatten i)])
+                                          (begin (set! varlst (append (cadr ret_lst) (list (list new_var (car ret_lst))) varlst ))
+                                                 (Var new_var))
+                                          )]))) varlst)]
       ))
 
   (define (final-flat e)
@@ -78,12 +78,19 @@
 
   (match p
     [(Program info body) (Program info (final-flat body))])
-)
-  
+  )  
 
 ;; explicate-control : R1 -> C0
 (define (explicate-control p)
-  (error "TODO: code goes here (explicate-control)"))
+  (define (explicate-control-e e)
+    (match e
+      [(Let x exp body) (Seq (Assign (Var x) exp) (explicate-control-e body))]
+      [_ (Return e)]
+      )
+    )
+  (match p
+    [(Program info body) (CProgram info `((start . , (explicate-control-e body))))])
+  )
 
 ;; Define the compiler passes to be used by interp-tests and the grader
 ;; Note that your compiler file (the file that defines the passes)
@@ -93,5 +100,5 @@
     ;; Uncomment the following passes as you finish them.
     ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
     ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
-    ;; ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
+    ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
     ))
