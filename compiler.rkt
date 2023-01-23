@@ -9,16 +9,6 @@
 (require "utilities.rkt")
 (provide (all-defined-out))
 
-;; uniquify : R1 -> R1
-
-;; 
-;; maintain a hash-table for env
-;; env - e0
-;; Let x exp body
-;; Uniquify exp using e0
-;; create e1 by adding x->x' to e0; change x->x'
-;; uniquify body with environment e1
-
 (define (insert-between v xs)
   (cond ((null? xs) xs)
         ((null? (cdr xs)) xs)
@@ -30,6 +20,7 @@
 
 (define (uniquify p)
   (define (uniquify-e e [ht (make-hash)])
+    ;;(display-all "e: " e "ht: " ht)
     (match e
       [(Int n) (Int n)]
       [(Var x) (cond
@@ -60,6 +51,9 @@
     ;;(display-all " e " e)
     (match e
       [(? is-atomic? i) (list i varlst)]
+      [(Let x exp body) (list (let ([fb (flatten body)] [fe (flatten exp)])
+                          (begin (set! varlst (append (cadr fe) (list (list x (car fe))) (cadr fb)))
+                                 (car fb))) varlst)]
       [(Prim op es) (list (Prim op (for/list ([i es])
                                 (cond
                                   [(is-atomic? i) i]
