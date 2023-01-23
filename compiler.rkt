@@ -57,27 +57,29 @@
     [_ #f]))
   
   (define (flatten e [varlst '()])
-    (display e)
+    ;;(display-all " e " e)
     (match e
       [(? is-atomic? i) (list i varlst)]
       [(Prim op es) (list (Prim op (for/list ([i es])
                                 (cond
                                   [(is-atomic? i) i]
                                   [else
-                                   (let ([new_var (Var (gensym 'g))] [ret_lst (flatten i)])
-                                     (begin (set! varlst (append (cdr ret_lst) varlst ))
-                                            new_var)
+                                   (let ([new_var (gensym 'g)] [ret_lst (flatten i)])
+                                     (begin (set! varlst (append (cadr ret_lst) (list (list new_var (car ret_lst))) varlst ))
+                                            (Var new_var))
                                          )]))) varlst)]
       ))
 
   (define (final-flat e)
     (let ([fexpr (flatten e)])
-      (display fexpr)
+      ;;(display-all " fexpr " fexpr)
       (define (final-flat-r lst)
+        ;;(display-all " lst " lst)
         (cond
           [(null? lst) (car fexpr)]
           [else
-           (Let (car (car lst)) (car (cdr (car lst))) (final-flat-r (cdr lst)))]))
+           ;;(display-all "caar " (caar lst) " cadr " (cadr (car lst)))
+           (Let (caar lst) (cadr (car lst)) (final-flat-r (cdr lst)))]))
       (final-flat-r (cadr fexpr))))
 
   (match p
