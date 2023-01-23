@@ -20,7 +20,6 @@
 
 (define (uniquify p)
   (define (uniquify-e e [ht (make-hash)])
-    ;;(display-all "e: " e "ht: " ht)
     (match e
       [(Int n) (Int n)]
       [(Var x) (cond
