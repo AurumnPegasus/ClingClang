@@ -19,6 +19,12 @@
 (define (display-all . vs)
   (for-each display (insert-between " " vs)))
 
+(define (is-atomic? e)
+  (match e
+    [(Int n) #t]
+    [(Var x) #t]
+    [_ #f]))
+
 (define (uniquify p)
   (define (uniquify-e e [ht (make-hash)])
     (match e
@@ -41,11 +47,6 @@
 
 ;; remove-complex-opera* : R1 -> R1
 (define (remove-complex-opera* p)
-  (define (is-atomic? e)
-    (match e
-      [(Int n) #t]
-      [(Var x) #t]
-      [_ #f]))
   
   (define (flatten e [varlst '()])
     ;;(display-all " e " e)
@@ -95,13 +96,31 @@
 ;; select-instructions
 (define (select-instructions p)
   (define (convert e)
+    ;(display-all " e " e)
     (match e
       [(Int n) (Imm n)]
       [(Var r) (Var r)]
-      [(Return e) (Instr `movq ((convert e) (Reg `rax)))]))
+      [(Seq exp tail) (append (convert exp) (convert tail))]
+      [(Prim op es) (append 
+                     (list (Instr `movq (list (convert (car es)) (Reg `rax))))
+                     (cond
+                       [(and (equal? `- op)(equal? (length es) 1)) (list (Instr `negq (list (Reg `rax))))]
+                       [else `()]
+                       )
+                     (for/list ([i (cdr es)])
+                       (cond
+                         [(equal? '+ op) (Instr `addq (list (convert i) (Reg `rax)))]
+                         [(equal? '- op) (Instr `subq (list (convert i) (Reg `rax)))])))]
+      [(Assign x val) (cond [(is-atomic? val) (list (Instr `movq (list (convert val) (convert x))))]
+                            [else (append (convert val) (list (Instr `movq (list (Reg `rax) x))))])]
+      [(Return e) (cond
+                    [(is-atomic? e) (list (Instr `movq (list (convert e) (Reg `rax))))]
+                    [else
+                     (convert e)])]))
 
   (match p
-    [(CProgram info `((start . , body))) (display (X86Program info (convert body)))])
+    [(CProgram info `((start . , body))) (X86Program info (hash 'start (Block '() (convert body))))])
+    ;;[(CProgram info `((start . , body))) (display-all "final output " (convert body))])
   )
 
 ;; Define the compiler passes to be used by interp-tests and the grader
