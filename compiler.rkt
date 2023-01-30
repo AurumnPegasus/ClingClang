@@ -4,6 +4,7 @@
 (require "interp-Lint.rkt")
 (require "interp-Lvar.rkt")
 (require "interp-Cvar.rkt")
+(require "interp.rkt")
 (require "type-check-Lvar.rkt")
 (require "type-check-Cvar.rkt")
 (require "utilities.rkt")
@@ -91,6 +92,18 @@
     [(Program info body) (CProgram info `((start . , (explicate-control-e body))))])
   )
 
+;; select-instructions
+(define (select-instructions p)
+  (define (convert e)
+    (match e
+      [(Int n) (Imm n)]
+      [(Var r) (Var r)]
+      [(Return e) (Instr `movq ((convert e) (Reg `rax)))]))
+
+  (match p
+    [(CProgram info `((start . , body))) (display (X86Program info (convert body)))])
+  )
+
 ;; Define the compiler passes to be used by interp-tests and the grader
 ;; Note that your compiler file (the file that defines the passes)
 ;; must be named "compiler.rkt"
@@ -100,4 +113,5 @@
     ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
     ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
     ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
+    ("select instructions", select-instructions, interp-pseudo-x86-0)
     ))
