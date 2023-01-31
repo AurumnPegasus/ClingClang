@@ -94,7 +94,7 @@
   )
 
 ;; select-instructions
-(define (select-instructions p)
+(define (select_instructions p)
   (define (convert e)
     ;(display-all " e " e)
     (match e
@@ -119,10 +119,46 @@
                      (convert e)])]))
 
   (match p
-    [(CProgram info `((start . , body))) (X86Program info (hash 'start (Block '() (convert body))))])
+    [(CProgram info `((start . , body))) (X86Program info (hash 'start (Block '() (append (convert body) (list (Jmp `conclusion))))))])
   )
 
-;; Define the compiler passes to be used by interp-tests and the grader
+;; assign homes
+(define (assign_homes p)
+
+  (define (replace e [ht (make-hash)])
+    (match e
+      [(Block info instr) (list
+                           (for/list ([i instr])
+                             (let ([x (replace i ht)])
+                               (begin
+                                 (set! ht (cadr x))
+                                 (car x))))
+                           ht)]
+      [(Instr label lst) (list
+                          (Instr label
+                                 (for/list ([i lst])
+                                   (match i
+                                     [(Var x) (cond
+                                                [(hash-has-key? ht i) (hash-ref ht i)]
+                                                [else
+                                                 (begin
+                                                   (hash-set! ht i (Deref `rbp (* -8 (+ 1 (length (hash-keys ht))))))
+                                                   (hash-ref ht i))])]
+                                     [_ i])))
+                          ht)]
+      [(Jmp label) (list (Jmp label) ht)]))
+                           
+
+  (match p
+    [(X86Program info body) (let ([x (replace (hash-ref body `start))] [ht (make-hash)])
+                              (begin
+                                ;(display-all "x " (length (hash-keys (cadr x))))
+                                (hash-set! ht 'stack-space (* (ceiling (/ (length (hash-keys (cadr x))) 2)) 16))
+                                (X86Program ht (hash `start (Block `() (car x))))))])
+  )
+  
+
+;; Define the compiler passes to be used by interp-tests and they grader
 ;; Note that your compiler file (the file that defines the passes)
 ;; must be named "compiler.rkt"
 (define compiler-passes
@@ -131,5 +167,6 @@
     ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
     ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
     ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
-    ("select instructions", select-instructions, interp-pseudo-x86-0)
+    ("instruction selection", select_instructions, interp-pseudo-x86-0)
+    ("assign homes", assign_homes, interp-x86-0)
     ))
