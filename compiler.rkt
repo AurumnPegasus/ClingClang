@@ -156,17 +156,43 @@
                                 (hash-set! ht 'stack-space (* (ceiling (/ (length (hash-keys (cadr x))) 2)) 16))
                                 (X86Program ht (hash `start (Block `() (car x))))))])
   )
+
+;; patch instructions
+(define (patch_instructions p)
+  (define (patchify e [varlst '()])
+    (match e
+      ;[(Block info instr) (for/list ([i instr])
+      ;                      (patchify i))]
+      [(Block info instr) (foldl (lambda (i l) (append l (patchify i))) `() instr)]
+      [(Instr label lst) (cond
+                           [(equal? 1 (length lst)) (list (Instr label lst))]
+                           [else
+                            (match lst
+                              [(list (Deref reg1 val1) (Deref reg2 val2))
+                               (list
+                                (Instr 'movq (list (Deref reg1 val1) (Reg 'rcx)))
+                                (Instr label (list (Reg 'rcx) (Deref reg2 val2)))
+                                )]
+                              [_ (list (Instr label lst))])]
+                           )]
+      [(Jmp label) (list (Jmp label))])) 
+    (match p
+      [(X86Program info body) (X86Program info (hash 'start (Block '() (patchify (hash-ref body `start)))))])
+      ;;[(X86Program info body) (display-all (patchify (hash-ref body `start)))])
+    )
   
 
-;; Define the compiler passes to be used by interp-tests and they grader
-;; Note that your compiler file (the file that defines the passes)
-;; must be named "compiler.rkt"
-(define compiler-passes
-  `( 
-    ;; Uncomment the following passes as you finish them.
-    ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
-    ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
-    ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
-    ("instruction selection", select_instructions, interp-pseudo-x86-0)
-    ("assign homes", assign_homes, interp-x86-0)
-    ))
+  ;; Define the compiler passes to be used by interp-tests and they grader
+  ;; Note that your compiler file (the file that defines the passes)
+  ;; must be named "compiler.rkt"
+  (define compiler-passes
+    `( 
+      ;; Uncomment the following passes as you finish them.
+      ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
+      ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
+      ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
+      ("instruction selection", select_instructions, interp-pseudo-x86-0)
+      ("assign homes", assign_homes, interp-x86-0)
+      ("patch instructions", patch_instructions, interp-x86-0)
+      ))
+  
