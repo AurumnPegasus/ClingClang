@@ -152,7 +152,6 @@
   (match p
     [(X86Program info body) (let ([x (replace (hash-ref body `start))] [ht (make-hash)])
                               (begin
-                                ;(display-all "x " (length (hash-keys (cadr x))))
                                 (hash-set! ht 'stack-space (* (ceiling (/ (length (hash-keys (cadr x))) 2)) 16))
                                 (X86Program ht (hash `start (Block `() (car x))))))])
   )
@@ -161,8 +160,6 @@
 (define (patch_instructions p)
   (define (patchify e [varlst '()])
     (match e
-      ;[(Block info instr) (for/list ([i instr])
-      ;                      (patchify i))]
       [(Block info instr) (foldl (lambda (i l) (append l (patchify i))) `() instr)]
       [(Instr label lst) (cond
                            [(equal? 1 (length lst)) (list (Instr label lst))]
@@ -173,13 +170,40 @@
                                 (Instr 'movq (list (Deref reg1 val1) (Reg 'rcx)))
                                 (Instr label (list (Reg 'rcx) (Deref reg2 val2)))
                                 )]
+                              [(list (Imm int1) (Deref reg1 val1)) (cond
+                                                                     [(> int1 (expt 2 16))
+                                                                      (list
+                                                                       (Instr `movq (list (Imm int1) (Reg `rcx)))
+                                                                       (Instr label (list (Reg `rcx) (Deref reg1 val1))))]
+                                                                     [else (list (Instr label lst))])]
                               [_ (list (Instr label lst))])]
                            )]
       [(Jmp label) (list (Jmp label))])) 
     (match p
       [(X86Program info body) (X86Program info (hash 'start (Block '() (patchify (hash-ref body `start)))))])
-      ;;[(X86Program info body) (display-all (patchify (hash-ref body `start)))])
     )
+
+;; prelude and conclude
+(define (prelude-and-conclusion p)
+  (define (get-prelude sspace)
+    (list
+     (Instr `pushq (list (Reg `rbp)))
+     (Instr `movq (list (Reg `rsp) (Reg `rbp)))
+     (Instr `subq (list (Imm sspace) (Reg `rsp)))
+     (Jmp `start)
+     ))
+
+  (define (get-conclusion sspace)
+    (list
+     (Instr `addq (list (Imm sspace) (Reg `rsp)))
+     (Instr `popq (list (Reg `rbp)))
+     (Retq)))
+
+  (match p
+    [(X86Program info body) (X86Program info (hash `start (hash-ref body `start)
+                                                   `main (Block `() (get-prelude (hash-ref info `stack-space)))
+                                                   `conclusion (Block `() (get-conclusion (hash-ref info `stack-space)))))])
+  )
   
 
   ;; Define the compiler passes to be used by interp-tests and they grader
@@ -194,5 +218,6 @@
       ("instruction selection", select_instructions, interp-pseudo-x86-0)
       ("assign homes", assign_homes, interp-x86-0)
       ("patch instructions", patch_instructions, interp-x86-0)
+      ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
       ))
   
