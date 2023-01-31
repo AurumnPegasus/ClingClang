@@ -120,7 +120,6 @@
 
   (match p
     [(CProgram info `((start . , body))) (X86Program info (hash 'start (Block '() (convert body))))])
-    ;;[(CProgram info `((start . , body))) (display-all "final output " (convert body))])
   )
 
 ;; Define the compiler passes to be used by interp-tests and the grader
