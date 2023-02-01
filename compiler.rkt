@@ -101,6 +101,7 @@
       [(Int n) (Imm n)]
       [(Var r) (Var r)]
       [(Seq exp tail) (append (convert exp) (convert tail))]
+      [(Prim `read lst) (list (Callq `read_int 0))]
       [(Prim op es) (append 
                      (list (Instr `movq (list (convert (car es)) (Reg `rax))))
                      (cond
@@ -146,6 +147,7 @@
                                                    (hash-ref ht i))])]
                                      [_ i])))
                           ht)]
+      [(Callq label n) (list (Callq label n) ht)]
       [(Jmp label) (list (Jmp label) ht)]))
                            
 
@@ -178,6 +180,7 @@
                                                                      [else (list (Instr label lst))])]
                               [_ (list (Instr label lst))])]
                            )]
+      [(Callq label n) (list (Callq label n))]
       [(Jmp label) (list (Jmp label))])) 
     (match p
       [(X86Program info body) (X86Program info (hash 'start (Block '() (patchify (hash-ref body `start)))))])
