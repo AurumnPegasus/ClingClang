@@ -123,6 +123,39 @@
     [(CProgram info `((start . , body))) (X86Program info (hash 'start (Block '() (append (convert body) (list (Jmp `conclusion))))))])
   )
 
+;; uncover live
+(define (uncover_live p)
+
+  (define (getset initial read write)
+    (let ([x (set-union (set-subtract initial write) read)])
+      (for/set ([i x])
+        (match i
+          [(Imm n) `()]
+          [_ i]))))
+
+  (define (recurse lst lafter)
+    (cond
+      [(equal? 0 (length lst)) (set->list lafter)]
+      [else
+         (match (car lst)
+           [(Instr `movq lv) (append (set->list lafter) (list (recurse (cdr lst) (getset lafter (set (car lv)) (set (cadr lv))))))]
+           [(Instr `addq lv) (append (set->list lafter) (recurse (cdr lst) (getset lafter (set (car lv) (cadr lv)) (set (cadr lv)))))]
+           [(Instr `subq lv) (append (set->list lafter) (recurse (cdr lst) (getset lafter (set (car lv) (cadr lv)) (set (cadr lv)))))]
+           [(Instr `negq lv) (append (set->list lafter) (recurse (cdr lst) (getset lafter (set (car lv)) (set (car lv)))))]
+           [(Jmp label) (append (set->list lafter) (recurse (cdr lst) (set-union (set (Reg `rax) (Reg `rsp)) lafter)))])])
+    )
+  
+  (define (aux e)
+    (match e
+      [(Block info instr) (recurse (reverse instr) (set))]))
+  
+  (match p
+    [(X86Program info body) (let ([x (aux (hash-ref body `start))] [ht (make-hash)])
+                              (begin
+                                (hash-set! ht 'live x)
+                                (X86Program ht body)))])
+  )
+
 ;; assign homes
 (define (assign_homes p)
 
@@ -152,10 +185,10 @@
                            
 
   (match p
-    [(X86Program info body) (let ([x (replace (hash-ref body `start))] [ht (make-hash)])
+    [(X86Program info body) (let ([x (replace (hash-ref body `start))])
                               (begin
-                                (hash-set! ht 'stack-space (* (ceiling (/ (length (hash-keys (cadr x))) 2)) 16))
-                                (X86Program ht (hash `start (Block `() (car x))))))])
+                                (hash-set! info 'stack-space (* (ceiling (/ (length (hash-keys (cadr x))) 2)) 16))
+                                (X86Program info (hash `start (Block `() (car x))))))])
   )
 
 ;; patch instructions
@@ -208,7 +241,6 @@
                                                    `conclusion (Block `() (get-conclusion (hash-ref info `stack-space)))))])
   )
   
-
   ;; Define the compiler passes to be used by interp-tests and they grader
   ;; Note that your compiler file (the file that defines the passes)
   ;; must be named "compiler.rkt"
@@ -219,6 +251,7 @@
       ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
       ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
       ("instruction selection", select_instructions, interp-pseudo-x86-0)
+      ("uncover life", uncover_live, interp-x86-0)
       ("assign homes", assign_homes, interp-x86-0)
       ("patch instructions", patch_instructions, interp-x86-0)
       ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
