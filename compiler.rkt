@@ -8,6 +8,7 @@
 (require "type-check-Lvar.rkt")
 (require "type-check-Cvar.rkt")
 (require "utilities.rkt")
+(require graph)
 (provide (all-defined-out))
 
 (define (insert-between v xs)
