@@ -133,9 +133,9 @@
    
     (let ([x (set-union (set-subtract prev_set write) read)])
       (set-remove (for/set ([i x])
-        (match i
-          [(Imm n) `()]
-          [_ i])) `()))
+                    (match i
+                      [(Imm n) `()]
+                      [_ i])) `()))
     )
 
   (define (calc instr prev_set)
@@ -150,11 +150,11 @@
   (define (aux b)
     (match b
       [(Block info body) (for/list ([instr (reverse body)]) (let ([lafter (calc instr gset)])
-                                                    (begin
-                                                      (set! gset lafter)
-                                                      lafter)))]
+                                                              (begin
+                                                                (set! gset lafter)
+                                                                lafter)))]
       )
-   )
+    )
   
   (match p
     [(X86Program info body) (let ([x (reverse (aux (hash-ref body `start)))] [ht (make-hash)])
@@ -162,6 +162,38 @@
                                 (hash-set! ht 'live x)
                                 (X86Program ht body)))])
   )
+
+
+;; build interference
+(define (build_interference p)
+
+  (define g (undirected-graph '()))
+  
+  (define (add-edges write lafter)
+    (for ([l (set-subtract lafter (set write))]) (add-edge! g write l))
+  )
+
+(define (aux b l)
+  (match b
+    [(Block info body) (for ([instr body] [lafter l])
+                         ;;(begin
+                           ;;(display-all "Edges " (get-edges g) "Instr " instr)
+                         (match instr
+                           [(Instr `movq (list (Imm x) n)) (add-edges n lafter)]
+                           [(Instr `movq (list m n)) (add-edges n (set-subtract lafter (set m)))]
+                           [(Instr label lst) (add-edges (last lst) lafter)]
+                           [(Jmp label) (add-edge! g (Reg 'rax) (Reg 'rsp))]
+                           ))]
+    ))
+  
+  
+(match p
+  [(X86Program info body) (let ([x (aux (hash-ref body `start) (hash-ref info `live))])
+                            (begin
+                              (hash-set! info 'conflicts g)
+                              (hash-set! info 'edges (get-edges g))
+                              (X86Program info body)))])
+)
 
 ;; assign homes
 (define (assign_homes p)
@@ -222,9 +254,9 @@
                            )]
       [(Callq label n) (list (Callq label n))]
       [(Jmp label) (list (Jmp label))])) 
-    (match p
-      [(X86Program info body) (X86Program info (hash 'start (Block '() (patchify (hash-ref body `start)))))])
-    )
+  (match p
+    [(X86Program info body) (X86Program info (hash 'start (Block '() (patchify (hash-ref body `start)))))])
+  )
 
 ;; prelude and conclude
 (define (prelude-and-conclusion p)
@@ -248,19 +280,19 @@
                                                    `conclusion (Block `() (get-conclusion (hash-ref info `stack-space)))))])
   )
   
-  ;; Define the compiler passes to be used by interp-tests and they grader
-  ;; Note that your compiler file (the file that defines the passes)
-  ;; must be named "compiler.rkt"
-  (define compiler-passes
-    `( 
-      ;; Uncomment the following passes as you finish them.
-      ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
-      ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
-      ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
-      ("instruction selection", select_instructions, interp-pseudo-x86-0)
-      ("uncover life", uncover_live, interp-x86-0)
-      ("assign homes", assign_homes, interp-x86-0)
-      ("patch instructions", patch_instructions, interp-x86-0)
-      ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
-      ))
-  
+;; Define the compiler passes to be used by interp-tests and they grader
+;; Note that your compiler file (the file that defines the passes)
+;; must be named "compiler.rkt"
+(define compiler-passes
+  `( 
+    ;; Uncomment the following passes as you finish them.
+    ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
+    ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
+    ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
+    ("instruction selection", select_instructions, interp-pseudo-x86-0)
+    ("uncover life", uncover_live, interp-x86-0)
+    ("build interference", build_interference, interp-x86-0)
+    ;("assign homes", assign_homes, interp-x86-0)
+    ;("patch instructions", patch_instructions, interp-x86-0)
+    ;("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
+    ))
