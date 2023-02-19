@@ -126,31 +126,37 @@
 ;; uncover live
 (define (uncover_live p)
 
-  (define (getset initial read write)
-    (let ([x (set-union (set-subtract initial write) read)])
-      (for/set ([i x])
+  (define gset set)
+
+  (define (get-set read write prev_set)
+   
+    (let ([x (set-union (set-subtract prev_set write) read)])
+      (set-remove (for/set ([i x])
         (match i
           [(Imm n) `()]
-          [_ i]))))
-
-  (define (recurse lst lafter)
-    (cond
-      [(equal? 0 (length lst)) (set->list lafter)]
-      [else
-         (match (car lst)
-           [(Instr `movq lv) (append (set->list lafter) (list (recurse (cdr lst) (getset lafter (set (car lv)) (set (cadr lv))))))]
-           [(Instr `addq lv) (append (set->list lafter) (recurse (cdr lst) (getset lafter (set (car lv) (cadr lv)) (set (cadr lv)))))]
-           [(Instr `subq lv) (append (set->list lafter) (recurse (cdr lst) (getset lafter (set (car lv) (cadr lv)) (set (cadr lv)))))]
-           [(Instr `negq lv) (append (set->list lafter) (recurse (cdr lst) (getset lafter (set (car lv)) (set (car lv)))))]
-           [(Jmp label) (append (set->list lafter) (recurse (cdr lst) (set-union (set (Reg `rax) (Reg `rsp)) lafter)))])])
+          [_ i])) `()))
     )
+
+  (define (calc instr prev_set)
+    (match instr
+      [(Instr 'movq lst) (get-set (set (car lst)) (set (cadr lst)) prev_set)]
+      [(Instr 'addq lst) (get-set (set (car lst) (cadr lst)) (set (cadr lst)) prev_set)]
+      [(Instr 'subq lst) (get-set (set (car lst) (cadr lst)) (set (cadr lst)) prev_set)]
+      [(Instr 'negq lst) (get-set (set (car lst)) (set (car lst)) prev_set)]
+      [(Jmp label) (get-set (set (Reg 'rax) (Reg 'rsp)) (set) (prev_set))]
+      ))
   
-  (define (aux e)
-    (match e
-      [(Block info instr) (recurse (reverse instr) (set))]))
+  (define (aux b)
+    (match b
+      [(Block info body) (for/list ([instr (reverse body)]) (let ([lafter (calc instr gset)])
+                                                    (begin
+                                                      (set! gset lafter)
+                                                      lafter)))]
+      )
+   )
   
   (match p
-    [(X86Program info body) (let ([x (aux (hash-ref body `start))] [ht (make-hash)])
+    [(X86Program info body) (let ([x (reverse (aux (hash-ref body `start)))] [ht (make-hash)])
                               (begin
                                 (hash-set! ht 'live x)
                                 (X86Program ht body)))])
