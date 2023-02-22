@@ -28,22 +28,22 @@
     [_ #f]))
 
 (define regmap (make-hash `(
-                            ((Reg rax) -1)
-                            ((Reg rsp) -2)
-                            ((Reg rbp) -3)
-                            ((Reg r11) -4)
-                            ((Reg r15) -5)
-                            ((Reg rcx) 0)
-                            ((Reg rdx) 1)
-                            ((Reg rsi) 2)
-                            ((Reg rdi) 3)
-                            ((Reg r8) 4)
-                            ((Reg r9) 5)
-                            ((Reg r10) 6)
-                            ((Reg rbx) 7)
-                            ((Reg r12) 8)
-                            ((Reg r13) 9)
-                            ((Reg r14) 10))))
+                            (rax -1)
+                            (rsp -2)
+                            (rbp -3)
+                            (r11 -4)
+                            (r15 -5)
+                            (rcx 0)
+                            (rdx 1)
+                            (rsi 2)
+                            (rdi 3)
+                            (r8 4)
+                            (r9 5)
+                            (r10 6)
+                            (rbx 7)
+                            (r12 8)
+                            (r13 9)
+                            (r14 10))))
 
 (define (uniquify p)
   (define (uniquify-e e [ht (make-hash)])
@@ -223,15 +223,19 @@
   
 
   (define (init graph)
+    ;;(display regmap)
     (begin
 
       ;; coloring initialisation
-      (for ([node (get-nodes graph)])
-        (match e
+      (for ([node (get-vertices graph)])
+        (match node
           [(Reg r) (begin
 
+                     ;;(display 1)
                      ;; each register has color set
-                     (hash-set! colored (Reg r) (hash-ref regmap (Reg r)))
+                     (hash-set! colored (Reg r) (hash-ref regmap r))
+                     ;;(display 2)
+                     ;;(display-all " colored in loop " colored)
 
                      ;; each node has saturation set
                      (for ([side (get-neighbors graph (Reg r))])
@@ -240,22 +244,24 @@
                          [(hash-has-key? neighbors side) (hash-set! neighbors side (set-add (hash-ref neighbors side) (hash-ref colored (Reg r))))]
                          [else
                           (hash-set! neighbors side (set (hash-ref colored (Reg r))))])))]
-          [_ `()]))
+          [_ `()])))
 
+      
+      ;;(display "pq")
       ; pq initialisation
-      (for ([node (get-nodes graph)])
+      (for ([node (get-vertices graph)])
         (cond
           [(hash-has-key? colored node) `()]
           [else
            (begin
              (pqueue-push! pq (cons (length (set->list (hash-ref neighbors node))) node))
-             `())])))
+             `())]))
     )
   
   (match p
     [(X86Program info body) (let ([x (init (hash-ref info `conflicts))])
                             (begin
-                              (X86Program info body)))])
+                              (display-all " colour " colored " neighbors " neighbors)))])
   )
 
 ;; assign homes
