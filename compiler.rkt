@@ -8,6 +8,7 @@
 (require "type-check-Lvar.rkt")
 (require "type-check-Cvar.rkt")
 (require "utilities.rkt")
+(require "priority_queue.rkt")
 (require graph)
 (provide (all-defined-out))
 
@@ -25,6 +26,24 @@
     [(Int n) #t]
     [(Var x) #t]
     [_ #f]))
+
+(define regmap (make-hash `(
+                            ((Reg rax) -1)
+                            ((Reg rsp) -2)
+                            ((Reg rbp) -3)
+                            ((Reg r11) -4)
+                            ((Reg r15) -5)
+                            ((Reg rcx) 0)
+                            ((Reg rdx) 1)
+                            ((Reg rsi) 2)
+                            ((Reg rdi) 3)
+                            ((Reg r8) 4)
+                            ((Reg r9) 5)
+                            ((Reg r10) 6)
+                            ((Reg rbx) 7)
+                            ((Reg r12) 8)
+                            ((Reg r13) 9)
+                            ((Reg r14) 10))))
 
 (define (uniquify p)
   (define (uniquify-e e [ht (make-hash)])
@@ -195,6 +214,50 @@
                               (X86Program info body)))])
 )
 
+;;allocate registers
+(define (allocate_registers p)
+
+  (define pq (make-pqueue (lambda (x y) (>= (car x) (car y)))))
+  (define colored (make-hash))
+  (define neighbors (make-hash))
+  
+
+  (define (init graph)
+    (begin
+
+      ;; coloring initialisation
+      (for ([node (get-nodes graph)])
+        (match e
+          [(Reg r) (begin
+
+                     ;; each register has color set
+                     (hash-set! colored (Reg r) (hash-ref regmap (Reg r)))
+
+                     ;; each node has saturation set
+                     (for ([side (get-neighbors graph (Reg r))])
+                       (cond
+                         [(hash-has-key? colored side) `()]
+                         [(hash-has-key? neighbors side) (hash-set! neighbors side (set-add (hash-ref neighbors side) (hash-ref colored (Reg r))))]
+                         [else
+                          (hash-set! neighbors side (set (hash-ref colored (Reg r))))])))]
+          [_ `()]))
+
+      ; pq initialisation
+      (for ([node (get-nodes graph)])
+        (cond
+          [(hash-has-key? colored node) `()]
+          [else
+           (begin
+             (pqueue-push! pq (cons (length (set->list (hash-ref neighbors node))) node))
+             `())])))
+    )
+  
+  (match p
+    [(X86Program info body) (let ([x (init (hash-ref info `conflicts))])
+                            (begin
+                              (X86Program info body)))])
+  )
+
 ;; assign homes
 (define (assign_homes p)
 
@@ -292,6 +355,7 @@
     ("instruction selection", select_instructions, interp-pseudo-x86-0)
     ("uncover life", uncover_live, interp-x86-0)
     ("build interference", build_interference, interp-x86-0)
+    ("allocate registers", allocate_registers, interp-x86-0)
     ;("assign homes", assign_homes, interp-x86-0)
     ;("patch instructions", patch_instructions, interp-x86-0)
     ;("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
