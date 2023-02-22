@@ -190,52 +190,81 @@
   
   (define (add-edges write lafter)
     (for ([l (set-subtract lafter (set write))]) (add-edge! g write l))
-  )
+    )
 
-(define (aux b l)
-  (match b
-    [(Block info body) (for ([instr body] [lafter l])
-                         ;;(begin
+  (define (aux b l)
+    (match b
+      [(Block info body) (for ([instr body] [lafter l])
+                           ;;(begin
                            ;;(display-all "Edges " (get-edges g) "Instr " instr)
-                         (match instr
-                           [(Instr `movq (list (Imm x) n)) (add-edges n lafter)]
-                           [(Instr `movq (list m n)) (add-edges n (set-subtract lafter (set m)))]
-                           [(Instr label lst) (add-edges (last lst) lafter)]
-                           [(Jmp label) (add-edge! g (Reg 'rax) (Reg 'rsp))]
-                           ))]
-    ))
+                           (match instr
+                             [(Instr `movq (list (Imm x) n)) (add-edges n lafter)]
+                             [(Instr `movq (list m n)) (add-edges n (set-subtract lafter (set m)))]
+                             [(Instr label lst) (add-edges (last lst) lafter)]
+                             [(Jmp label) (add-edge! g (Reg 'rax) (Reg 'rsp))]
+                             ))]
+      ))
   
   
-(match p
-  [(X86Program info body) (let ([x (aux (hash-ref body `start) (hash-ref info `live))])
-                            (begin
-                              (hash-set! info 'conflicts g)
-                              (hash-set! info 'edges (get-edges g))
-                              (X86Program info body)))])
-)
+  (match p
+    [(X86Program info body) (let ([x (aux (hash-ref body `start) (hash-ref info `live))])
+                              (begin
+                                (hash-set! info 'conflicts g)
+                                (hash-set! info 'edges (get-edges g))
+                                (X86Program info body)))])
+  )
 
 ;;allocate registers
 (define (allocate_registers p)
 
-  (define pq (make-pqueue (lambda (x y) (>= (car x) (car y)))))
-  (define colored (make-hash))
-  (define neighbors (make-hash))
+  (define (get-color s c)
+    (cond
+      [(set-member? s c) (get-color s (+ c 1))]
+      [else c])
+    )
   
+  (define (color-graph pq colored neighbors graph)
+    
+    (cond
+      [(equal? 0 (pqueue-count pq)) colored]
+      [else (let ([x (cadr (pqueue-pop! pq))])
+              
+              (begin
+                (cond
+                  [(hash-has-key? colored x) `()]
+                  [else
+                   
+                   (let ([c (get-color (hash-ref neighbors x) 0)])
+                     
+                     (begin
+                       (hash-set! colored x c)
+                       (for ([side (get-neighbors graph x)])
+                         (cond
+                           [(hash-has-key? colored side) `()]
+                           [else (begin
+                                   (hash-set! neighbors side (set-add (hash-ref neighbors side) c))
+                                   (pqueue-push! pq (list (length (set->list (hash-ref neighbors side))) side)))])
+                         )
+                       ))])
+                (color-graph pq colored neighbors graph)
+
+                ))])
+    )
 
   (define (init graph)
-    ;;(display regmap)
-    (begin
 
+    (define pq (make-pqueue (lambda (x y) (>= (car x) (car y)))))
+    (define colored (make-hash))
+    (define neighbors (make-hash))
+
+
+    (begin
       ;; coloring initialisation
       (for ([node (get-vertices graph)])
         (match node
           [(Reg r) (begin
-
-                     ;;(display 1)
                      ;; each register has color set
                      (hash-set! colored (Reg r) (hash-ref regmap r))
-                     ;;(display 2)
-                     ;;(display-all " colored in loop " colored)
 
                      ;; each node has saturation set
                      (for ([side (get-neighbors graph (Reg r))])
@@ -244,25 +273,24 @@
                          [(hash-has-key? neighbors side) (hash-set! neighbors side (set-add (hash-ref neighbors side) (hash-ref colored (Reg r))))]
                          [else
                           (hash-set! neighbors side (set (hash-ref colored (Reg r))))])))]
-          [_ `()])))
+          [_ `()]))
 
-      
-      ;;(display "pq")
-      ; pq initialisation
+      ; pqueue initialisation
       (for ([node (get-vertices graph)])
         (cond
           [(hash-has-key? colored node) `()]
           [else
            (begin
-             (pqueue-push! pq (cons (length (set->list (hash-ref neighbors node))) node))
+             (pqueue-push! pq (list (length (set->list (hash-ref neighbors node))) node))
              `())]))
-    )
+
+      (color-graph pq colored neighbors graph)
+      
+      ))
   
   (match p
     [(X86Program info body) (let ([x (init (hash-ref info `conflicts))])
-                            (begin
-                              (display-all " colour " colored " neighbors " neighbors)))])
-  )
+                              (display x))]))
 
 ;; assign homes
 (define (assign_homes p)
