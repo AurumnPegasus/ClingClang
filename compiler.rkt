@@ -29,21 +29,45 @@
 
 (define regmap (make-hash `(
                             (rax -1)
+                            (-1 rax)
                             (rsp -2)
+                            (-2 rsp)
                             (rbp -3)
+                            (-3 rbp)
                             (r11 -4)
+                            (-4 r11)
                             (r15 -5)
+                            (-5 r15)
                             (rcx -6)
+                            (-6 rcx)
                             (r14 0)
+                            (0 r14)
                             (rdx 1)
+                            (1 rdx)
                             (rsi 2)
+                            (2 rsi)
                             (rdi 3)
+                            (3 rdi)
                             (r8 4)
+                            (4 r8)
                             (r9 5)
+                            (5 r9)
                             (r10 6)
+                            (6 r10)
                             (rbx 7)
+                            (7 rbx)
                             (r12 8)
-                            (r13 9))))
+                            (8 r12)
+                            (r13 9)
+                            (9 r13)
+                            )))
+(define numpos 10)
+
+
+(define caller-reg (set `rax `rcx `rdx `rsi `rdi `r8 `r9 `r10 `r11))
+(define callee-reg (set `rsp `rbp `rbx `r12 `r13 `r14 `r15))
+
+
 
 (define (uniquify p)
   (define (uniquify-e e [ht (make-hash)])
@@ -264,7 +288,7 @@
         (match node
           [(Reg r) (begin
                      ;; each register has color set
-                     (hash-set! colored (Reg r) (hash-ref regmap r))
+                     (hash-set! colored (Reg r) (car (hash-ref regmap r)))
 
                      ;; each node has saturation set
                      (for ([side (get-neighbors graph (Reg r))])
@@ -298,36 +322,51 @@
 ;; assign homes
 (define (assign_homes p)
 
-  (define (replace e [ht (make-hash)])
+  (define (replace e colors [updated_instrs (list)] [caller-saved (mutable-set)])
     (match e
-      [(Block info instr) (list
-                           (for/list ([i instr])
-                             (let ([x (replace i ht)])
-                               (begin
-                                 (set! ht (cadr x))
-                                 (car x))))
-                           ht)]
-      [(Instr label lst) (list
-                          (Instr label
-                                 (for/list ([i lst])
-                                   (match i
-                                     [(Var x) (cond
-                                                [(hash-has-key? ht i) (hash-ref ht i)]
-                                                [else
-                                                 (begin
-                                                   (hash-set! ht i (Deref `rbp (* -8 (+ 1 (length (hash-keys ht))))))
-                                                   (hash-ref ht i))])]
-                                     [_ i])))
-                          ht)]
-      [(Callq label n) (list (Callq label n) ht)]
-      [(Jmp label) (list (Jmp label) ht)]))
-                           
+      [(Block info instr) (begin (for ([i instr])
+                                   (let ([x (replace i colors updated_instrs caller-saved)])
+                                     (begin
+                                       (set! caller-saved (cadr x))
+                                       (set! updated_instrs (append updated_instrs (car x)))))) updated_instrs)]
+      
+      [(Instr label lst) (list (list (Instr label
+                                            (for/list ([i lst])
+                                              (match i
+                                                [(Var x) (let ([c (hash-ref colors i)])
+                                                           (cond
+                                                             [(< c numpos) (let ([y (hash-ref regmap c)])
+                                                                             (begin
+                                                                               (cond
+                                                                                 [(set-member? caller-reg (car y)) (set-add! caller-saved (car y))])
+                                                                               (Reg (car y))
+                                                                               ))]
+                                                             [else (Deref `rbp (* -8 (+ 1 (- c numpos))))]))]
+                                                    
+                                                [_ i])))) caller-saved)]
+      [(Callq label n) (let ([cs-list (set->list caller-saved)])
+                         (list (append
+                                (for/list ([r cs-list]) (Instr 'pushq r))
+                                (list Callq label n)
+                                (for/list ([r (reverse cs-list)]) (Instr 'popq (Reg r)))
+                                )) caller-saved)]
+      [(Jmp label) (list (list (Jmp label)) caller-saved)])
+    )
 
+  (define (max-element x y) (if (> x y) x y))
+
+  (define (max-list ls)
+    (if (null? (cdr ls))
+        (car ls)
+        (max-element (car ls) (max-list (cdr ls)))))
+                           
   (match p
-    [(X86Program info body) (let ([x (replace (hash-ref body `start))])
+    [(X86Program info body) (let ([x (replace (hash-ref body `start) (hash-ref info `colors))] [max-val (max-list (hash-values (hash-ref info `colors)))])
                               (begin
-                                (hash-set! info 'stack-space (* (ceiling (/ (length (hash-keys (cadr x))) 2)) 16))
-                                (X86Program info (hash `start (Block `() (car x))))))])
+                                (cond
+                                  [(>= max-val numpos) (hash-set! info 'stack-space (* (ceiling (/ (+ (- max-val numpos) 1) 2)) 16))]
+                                  [else (hash-set! info 'stack-space 0)])
+                                (X86Program info (hash `start (Block `() x)))))])
   )
 
 ;; patch instructions
@@ -393,7 +432,7 @@
     ("uncover life", uncover_live, interp-x86-0)
     ("build interference", build_interference, interp-x86-0)
     ("allocate registers", allocate_registers, interp-x86-0)
-    ;("assign homes", assign_homes, interp-x86-0)
+    ("assign homes", assign_homes, interp-x86-0)
     ;("patch instructions", patch_instructions, interp-x86-0)
     ;("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
     ))
