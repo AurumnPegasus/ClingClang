@@ -290,7 +290,10 @@
   
   (match p
     [(X86Program info body) (let ([x (init (hash-ref info `conflicts))])
-                              (display x))]))
+                              (begin
+                                (hash-set! info `colors x)
+                                (X86Program info body)))])
+  )
 
 ;; assign homes
 (define (assign_homes p)
