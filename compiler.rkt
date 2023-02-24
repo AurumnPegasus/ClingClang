@@ -64,8 +64,8 @@
 (define numpos 10)
 
 
-(define caller-reg (set `rax `rcx `rdx `rsi `rdi `r8 `r9 `r10 `r11))
-(define callee-reg (set `rsp `rbp `rbx `r12 `r13 `r14 `r15))
+(define caller-reg (set `rax `rcx `rdx `rsi `rdi `r8 `r9 `r10 `r11 `r14))
+(define callee-reg (set `rsp `rbp `rbx `r12 `r13 `r15))
 
 
 
@@ -330,8 +330,7 @@
     (match e
       [(Block info instr) (begin (for ([i instr])
                                    (let ([x (replace i colors updated_instrs caller-saved)])
-                                     (begin
-                                       (display-all x)
+                                     (begin                                       
                                        (set! caller-saved (cadr x))
                                        (set! updated_instrs (append updated_instrs (car x)))))) updated_instrs)]
       
@@ -349,12 +348,11 @@
                                                              [else (Deref `rbp (* -8 (+ 1 (- c numpos))))]))]
                                                     
                                                 [_ i])))) caller-saved)]
-      [(Callq label n) (let ([cs-list (set->list caller-reg)])
-                         (list (begin
-                                 (display 1) 
-                                (for/list ([r cs-list]) (list (Instr 'pushq r)))
+      [(Callq label n) (let ([cs-list (set->list caller-saved)])
+                         (list (append 
+                                (for/list ([r cs-list]) (Instr 'pushq (list (Reg r))))
                                 (list (Callq label n))
-                                (for/list ([r (reverse cs-list)]) (list (Instr 'popq (Reg r))))
+                                (for/list ([r (reverse cs-list)]) (Instr 'popq (list (Reg r))))
                                 ) caller-saved))]
 
       ;[(Callq label n) (list (list (Callq label n)) caller-saved)]
