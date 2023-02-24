@@ -64,8 +64,8 @@
 (define numpos 10)
 
 
-(define caller-reg (set `rax `rcx `rdx `rsi `rdi `r8 `r9 `r10 `r11 `r14))
-(define callee-reg (set `rsp `rbp `rbx `r12 `r13 `r15))
+(define caller-reg (set `rax `rcx `rdx `rsi `rdi `r8 `r9 `r10 `r11))
+(define callee-reg (set `rsp `rbp `rbx `r12 `r13 `r14 `r15))
 
 
 
@@ -320,17 +320,20 @@
     [(X86Program info body) (let ([x (init (hash-ref info `conflicts))])
                               (begin
                                 (hash-set! info `colors x)
+                                (hash-set! info `callee-saved (foldr (lambda (v l) (append (cond
+                                                                                           [(set-member? callee-reg (hash-ref regmap v)) (list (hash-ref regmap v))]
+                                                                                           [else `()]) l)) `() (hash-values x) ))
                                 (X86Program info body)))])
   )
 
 ;; assign homes
 (define (assign_homes p)
 
-  (define (replace e colors [updated_instrs (list)] [caller-saved (mutable-set)])
+  (define (replace e colors num_callee [updated_instrs (list)] [caller-saved (mutable-set)])
     (match e
       [(Block info instr) (begin (for ([i instr])
-                                   (let ([x (replace i colors updated_instrs caller-saved)])
-                                     (begin                                       
+                                   (let ([x (replace i colors num_callee updated_instrs caller-saved)])
+                                     (begin
                                        (set! caller-saved (cadr x))
                                        (set! updated_instrs (append updated_instrs (car x)))))) updated_instrs)]
       
@@ -343,9 +346,10 @@
                                                                              (begin
                                                                                (cond
                                                                                  [(set-member? caller-reg (car y)) (set-add! caller-saved (car y))])
-                                                                               (Reg (car y))
+                                                                               (Reg
+                                                                                (car y))
                                                                                ))]
-                                                             [else (Deref `rbp (* -8 (+ 1 (- c numpos))))]))]
+                                                             [else (Deref `rbp (* -8 (+ (+ 1 (- c numpos)) num_callee)))]))]
                                                     
                                                 [_ i])))) caller-saved)]
       [(Callq label n) (let ([cs-list (set->list caller-saved)])
@@ -355,7 +359,6 @@
                                 (for/list ([r (reverse cs-list)]) (Instr 'popq (list (Reg r))))
                                 ) caller-saved))]
 
-      ;[(Callq label n) (list (list (Callq label n)) caller-saved)]
       [(Jmp label) (list (list (Jmp label)) caller-saved)])
     )
 
@@ -365,13 +368,24 @@
     (if (null? (cdr ls))
         (car ls)
         (max-element (car ls) (max-list (cdr ls)))))
+
+  (define (max-proper-list col)
+    (max-list (for/list ([x (hash-keys col)]) (match x
+                                               [(Reg r) -1]
+                                               [_ (hash-ref col x)]))))
+
+
+  (define (align num)
+    (* (ceiling (/ num 16) ) 16)
+    )
                            
   (match p
-    [(X86Program info body) (let ([x (replace (hash-ref body `start) (hash-ref info `colors))] [max-val (max-list (hash-values (hash-ref info `colors)))])
+    [(X86Program info body) (let ([x (replace (hash-ref body `start) (hash-ref info `colors) (length (hash-ref info `callee-saved)))] [max-val (max-proper-list (hash-ref info `colors))])
                               (begin
+                                (display-all " max-val " max-val " numpos " numpos " callee saved" (hash-ref info `callee-saved) " len " (length (hash-ref info `callee-saved)))
                                 (cond
-                                  [(>= max-val numpos) (hash-set! info 'stack-space (* (ceiling (/ (+ (- max-val numpos) 1) 2)) 16))]
-                                  [else (hash-set! info 'stack-space 0)])
+                                  [(>= max-val numpos) (hash-set! info 'stack-space (- (align (* 8 (+ (+ (- max-val numpos) 1) (length (hash-ref info `callee-saved))))) (* 8 (length (hash-ref info `callee-saved)))))]
+                                  [else (hash-set! info 'stack-space (- (align (length (hash-ref info `callee-saved))) (* 8 (length (hash-ref info `callee-saved)))))])
                                 (X86Program info (hash `start (Block `() x)))))])
   )
 
@@ -380,6 +394,7 @@
   (define (patchify e [varlst '()])
     (match e
       [(Block info instr) (foldl (lambda (i l) (append l (patchify i))) `() instr)]
+      [(Instr `movq (list a a)) `()]
       [(Instr label lst) (cond
                            [(equal? 1 (length lst)) (list (Instr label lst))]
                            [else
@@ -405,24 +420,29 @@
 
 ;; prelude and conclude
 (define (prelude-and-conclusion p)
-  (define (get-prelude sspace)
-    (list
-     (Instr `pushq (list (Reg `rbp)))
-     (Instr `movq (list (Reg `rsp) (Reg `rbp)))
-     (Instr `subq (list (Imm sspace) (Reg `rsp)))
-     (Jmp `start)
+  (define (get-prelude sspace callee-saved)
+    (append
+     (list (Instr `pushq (list (Reg `rbp))))
+     (list (Instr `movq (list (Reg `rsp) (Reg `rbp))))
+     (for/list ([c callee-saved]) (Instr 'pushq (list (Reg c))))
+     (list (Instr `subq (list (Imm sspace) (Reg `rsp))))
+     (list (Jmp `start))
      ))
 
-  (define (get-conclusion sspace)
-    (list
-     (Instr `addq (list (Imm sspace) (Reg `rsp)))
-     (Instr `popq (list (Reg `rbp)))
-     (Retq)))
+  (define (get-conclusion sspace callee-saved)
+    (append
+     (list (Instr `addq (list (Imm sspace) (Reg `rsp))))
+     (for/list ([c callee-saved]) (Instr 'popq (list (Reg c))))
+     (list (Instr `popq (list (Reg `rbp))))
+     (list (Retq))))
 
   (match p
-    [(X86Program info body) (X86Program info (hash `start (hash-ref body `start)
-                                                   `main (Block `() (get-prelude (hash-ref info `stack-space)))
-                                                   `conclusion (Block `() (get-conclusion (hash-ref info `stack-space)))))])
+    [(X86Program info body) (begin
+                              (display-all " prelude " (get-prelude (hash-ref info `stack-space) (hash-ref info `callee-saved)))
+                              (
+                              X86Program info (hash `start (hash-ref body `start)
+                                                   `main (Block `() (get-prelude (hash-ref info `stack-space) (hash-ref info `callee-saved)))
+                                                   `conclusion (Block `() (get-conclusion (hash-ref info `stack-space) (hash-ref info `callee-saved))))))])
   )
   
 ;; Define the compiler passes to be used by interp-tests and they grader
@@ -439,6 +459,6 @@
     ("build interference", build_interference, interp-x86-0)
     ("allocate registers", allocate_registers, interp-x86-0)
     ("assign homes", assign_homes, interp-x86-0)
-    ;("patch instructions", patch_instructions, interp-x86-0)
-    ;("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
+    ("patch instructions", patch_instructions, interp-x86-0)
+    ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
     ))
