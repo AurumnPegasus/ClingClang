@@ -382,7 +382,7 @@
   (match p
     [(X86Program info body) (let ([x (replace (hash-ref body `start) (hash-ref info `colors) (length (hash-ref info `callee-saved)))] [max-val (max-proper-list (hash-ref info `colors))])
                               (begin
-                                (display-all " max-val " max-val " numpos " numpos " callee saved" (hash-ref info `callee-saved) " len " (length (hash-ref info `callee-saved)))
+                                ;(display-all " max-val " max-val " numpos " numpos " callee saved" (hash-ref info `callee-saved) " len " (length (hash-ref info `callee-saved)))
                                 (cond
                                   [(>= max-val numpos) (hash-set! info 'stack-space (- (align (* 8 (+ (+ (- max-val numpos) 1) (length (hash-ref info `callee-saved))))) (* 8 (length (hash-ref info `callee-saved)))))]
                                   [else (hash-set! info 'stack-space (- (align (length (hash-ref info `callee-saved))) (* 8 (length (hash-ref info `callee-saved)))))])
@@ -437,12 +437,9 @@
      (list (Retq))))
 
   (match p
-    [(X86Program info body) (begin
-                              (display-all " prelude " (get-prelude (hash-ref info `stack-space) (hash-ref info `callee-saved)))
-                              (
-                              X86Program info (hash `start (hash-ref body `start)
+    [(X86Program info body) (X86Program info (hash `start (hash-ref body `start)
                                                    `main (Block `() (get-prelude (hash-ref info `stack-space) (hash-ref info `callee-saved)))
-                                                   `conclusion (Block `() (get-conclusion (hash-ref info `stack-space) (hash-ref info `callee-saved))))))])
+                                                   `conclusion (Block `() (get-conclusion (hash-ref info `stack-space) (hash-ref info `callee-saved)))))])
   )
   
 ;; Define the compiler passes to be used by interp-tests and they grader
