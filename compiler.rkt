@@ -173,7 +173,10 @@
   (define gset set)
 
   (define (get-set read write prev_set)
-   
+    (set! write (for/set ([w write]) (cond
+                                       [(set-member? caller-reg w) (Reg w)]
+                                       [else w])))
+    
     (let ([x (set-union (set-subtract prev_set write) read)])
       (set-remove (for/set ([i x])
                     (match i
@@ -188,6 +191,7 @@
       [(Instr 'subq lst) (get-set (set (car lst) (cadr lst)) (set (cadr lst)) prev_set)]
       [(Instr 'negq lst) (get-set (set (car lst)) (set (car lst)) prev_set)]
       [(Jmp label) (get-set (set (Reg 'rax) (Reg 'rsp)) (set) (prev_set))]
+      [(Callq label n) (get-set (set) caller-reg prev_set)]
       ))
   
   (define (aux b)
@@ -226,6 +230,7 @@
                              [(Instr `movq (list m n)) (add-edges n (set-subtract lafter (set m)))]
                              [(Instr label lst) (add-edges (last lst) lafter)]
                              [(Jmp label) (add-edge! g (Reg 'rax) (Reg 'rsp))]
+                             [(Callq label n) (for ([w caller-reg]) (add-edges (Reg w) lafter))]
                              ))]
       ))
   
@@ -252,7 +257,6 @@
     (cond
       [(equal? 0 (pqueue-count pq)) colored]
       [else (let ([x (cadr (pqueue-pop! pq))])
-              
               (begin
                 (cond
                   [(hash-has-key? colored x) `()]
@@ -327,6 +331,7 @@
       [(Block info instr) (begin (for ([i instr])
                                    (let ([x (replace i colors updated_instrs caller-saved)])
                                      (begin
+                                       (display-all x)
                                        (set! caller-saved (cadr x))
                                        (set! updated_instrs (append updated_instrs (car x)))))) updated_instrs)]
       
@@ -344,12 +349,15 @@
                                                              [else (Deref `rbp (* -8 (+ 1 (- c numpos))))]))]
                                                     
                                                 [_ i])))) caller-saved)]
-      [(Callq label n) (let ([cs-list (set->list caller-saved)])
-                         (list (append
-                                (for/list ([r cs-list]) (Instr 'pushq r))
-                                (list Callq label n)
-                                (for/list ([r (reverse cs-list)]) (Instr 'popq (Reg r)))
-                                )) caller-saved)]
+      [(Callq label n) (let ([cs-list (set->list caller-reg)])
+                         (list (begin
+                                 (display 1) 
+                                (for/list ([r cs-list]) (list (Instr 'pushq r)))
+                                (list (Callq label n))
+                                (for/list ([r (reverse cs-list)]) (list (Instr 'popq (Reg r))))
+                                ) caller-saved))]
+
+      ;[(Callq label n) (list (list (Callq label n)) caller-saved)]
       [(Jmp label) (list (list (Jmp label)) caller-saved)])
     )
 
