@@ -321,7 +321,7 @@
                               (begin
                                 (hash-set! info `colors x)
                                 (hash-set! info `callee-saved (foldr (lambda (v l) (append (cond
-                                                                                           [(set-member? callee-reg (hash-ref regmap v)) (list (hash-ref regmap v))]
+                                                                                           [(and (hash-has-key? regmap v) (set-member? callee-reg (hash-ref regmap v))) (list (hash-ref regmap v))]
                                                                                            [else `()]) l)) `() (hash-values x) ))
                                 (X86Program info body)))])
   )
