@@ -4,9 +4,11 @@
 (require "interp-Lint.rkt")
 (require "interp-Lvar.rkt")
 (require "interp-Cvar.rkt")
+(require "interp-Lif.rkt")
 (require "interp.rkt")
 (require "type-check-Lvar.rkt")
 (require "type-check-Cvar.rkt")
+(require "type-check-Lif.rkt")
 (require "utilities.rkt")
 (require "priority_queue.rkt")
 (require graph)
@@ -67,6 +69,18 @@
 (define caller-reg (set `rax `rcx `rdx `rsi `rdi `r8 `r9 `r10 `r11))
 (define callee-reg (set `rsp `rbp `rbx `r12 `r13 `r14 `r15))
 
+(define (shrink p)
+  (define (shrink-e e)
+    (match e
+      [(Prim `and (list e1 e2)) (If (shrink-e e1) (shrink-e e2) (Bool #f))]
+      [(Prim `or (list e1 e2)) (If (shrink-e e1) (Bool #t) (shrink-e e2))]
+      [(Prim op es) (Prim op (for/list ([i es]) (shrink-e i)))]
+      [(If cnd thn els) (If (shrink-e cnd) (shrink-e thn) (shrink-e els))]
+      [(Let x exp body) (Let x (shrink-e exp) (shrink-e body))]
+      [_ e])
+    )
+  (match p
+    [(Program info body) (Program info (shrink-e body))]))
 
 
 (define (uniquify p)
@@ -448,14 +462,15 @@
 (define compiler-passes
   `( 
     ;; Uncomment the following passes as you finish them.
-    ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
-    ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
-    ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
-    ("instruction selection", select_instructions, interp-pseudo-x86-0)
-    ("uncover life", uncover_live, interp-x86-0)
-    ("build interference", build_interference, interp-x86-0)
-    ("allocate registers", allocate_registers, interp-x86-0)
-    ("assign homes", assign_homes, interp-x86-0)
-    ("patch instructions", patch_instructions, interp-x86-0)
-    ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
+    ("shrink", shrink, interp-Lif, type-check-Lif)
+    ;("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
+    ;("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
+    ;("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
+    ;("instruction selection", select_instructions, interp-pseudo-x86-0)
+    ;("uncover life", uncover_live, interp-x86-0)
+    ;("build interference", build_interference, interp-x86-0)
+    ;("allocate registers", allocate_registers, interp-x86-0)
+    ;("assign homes", assign_homes, interp-x86-0)
+    ;("patch instructions", patch_instructions, interp-x86-0)
+    ;("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
     ))
