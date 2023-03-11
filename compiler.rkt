@@ -71,6 +71,7 @@
 
 (define (shrink p)
   (define (shrink-e e)
+    ;(display-all " e " e)
     (match e
       [(Prim `and (list e1 e2)) (If (shrink-e e1) (shrink-e e2) (Bool #f))]
       [(Prim `or (list e1 e2)) (If (shrink-e e1) (Bool #t) (shrink-e e2))]
@@ -87,6 +88,7 @@
   (define (uniquify-e e [ht (make-hash)])
     (match e
       [(Int n) (Int n)]
+      [(Bool b) (Bool b)]
       [(Var x) (cond
                  [(hash-has-key? ht x) (Var (hash-ref ht x))]
                  [else (Var x)]
@@ -97,6 +99,7 @@
            (hash-set! ht x x_new)
            (Let x_new exp_new (uniquify-e body ht))
            ))]
+      [(If cnd thn els) (If (uniquify-e cnd) (uniquify-e thn) (uniquify-e els))]
       [(Prim op es) (Prim op (for/list ([i es]) (uniquify-e i ht)))]
       [_ (error "Nothing matches")]))
   (match p
@@ -463,7 +466,7 @@
   `( 
     ;; Uncomment the following passes as you finish them.
     ("shrink", shrink, interp-Lif, type-check-Lif)
-    ;("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
+    ("uniquify" ,uniquify ,interp-Lif ,type-check-Lif)
     ;("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
     ;("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
     ;("instruction selection", select_instructions, interp-pseudo-x86-0)
