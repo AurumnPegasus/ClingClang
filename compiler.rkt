@@ -27,6 +27,7 @@
   (match e
     [(Int n) #t]
     [(Var x) #t]
+    [(Bool b) #t]
     [_ #f]))
 
 (define regmap (make-hash `(
@@ -99,7 +100,7 @@
            (hash-set! ht x x_new)
            (Let x_new exp_new (uniquify-e body ht))
            ))]
-      [(If cnd thn els) (If (uniquify-e cnd) (uniquify-e thn) (uniquify-e els))]
+      [(If cnd thn els) (If (uniquify-e cnd ht) (uniquify-e thn ht) (uniquify-e els ht))]
       [(Prim op es) (Prim op (for/list ([i es]) (uniquify-e i ht)))]
       [_ (error "Nothing matches")]))
   (match p
@@ -113,9 +114,13 @@
     ;;(display-all " e " e)
     (match e
       [(? is-atomic? i) (list i varlst)]
+
       [(Let x exp body) (list (let ([fb (flatten body)] [fe (flatten exp)])
                                 (begin (set! varlst (append (cadr fe) (list (list x (car fe))) (cadr fb)))
                                        (car fb))) varlst)]
+      [(If cnd thn els) (list (let ([fcnd (flatten cnd)] [fthn (flatten thn)] [fels (flatten els)])
+                                (begin (set! varlst (append (cadr fcnd) (cadr fthn) (cadr fels)))
+                                       (If (car fcnd) (car fthn) (car fels)))) varlst)]
       [(Prim op es) (list (Prim op (for/list ([i es])
                                      (cond
                                        [(is-atomic? i) i]
@@ -128,13 +133,12 @@
 
   (define (final-flat e)
     (let ([fexpr (flatten e)])
-      ;;(display-all " fexpr " fexpr)
+      ;(display-all " fexpr " fexpr)
       (define (final-flat-r lst)
-        ;;(display-all " lst " lst)
+        ;(display-all " lst " lst)
         (cond
           [(null? lst) (car fexpr)]
-          [else
-           ;;(display-all "caar " (caar lst) " cadr " (cadr (car lst)))
+          [else     
            (Let (caar lst) (cadr (car lst)) (final-flat-r (cdr lst)))]))
       (final-flat-r (cadr fexpr))))
 
@@ -467,7 +471,7 @@
     ;; Uncomment the following passes as you finish them.
     ("shrink", shrink, interp-Lif, type-check-Lif)
     ("uniquify" ,uniquify ,interp-Lif ,type-check-Lif)
-    ;("remove complex opera*" ,remove-complex-opera* ,interp-Lvar ,type-check-Lvar)
+    ("remove complex opera*" ,remove-complex-opera* ,interp-Lif ,type-check-Lif)
     ;("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
     ;("instruction selection", select_instructions, interp-pseudo-x86-0)
     ;("uncover life", uncover_live, interp-x86-0)
