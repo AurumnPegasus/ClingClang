@@ -159,30 +159,60 @@
       [else (hash-set! all-blocks b '()) '()]
       ))
   
-  (define (explicate-control-e e block)
+  (define (explicate-control-e e block [control '()])
+    ;(display-all "e: " e "start: " (hash-ref all-blocks 'start))
     (match e
       [(Let x exp body) (begin (hash-set! all-blocks block
-                                          (append (hash-ref all-blocks block)
+                                          (list (hash-ref all-blocks block)
                                                   (list Assign (Var x) exp)))
                                (explicate-control-e body block))]
+
       [(If cnd thn els) (let ([bthn (gensym 'block)] [bels (gensym 'block)])
-                          (begin
-                            (hash-set! all-blocks block
-                                       (append (hash-ref all-blocks block)
-                                               (match cnd
-                                                 [(Bool b) (list IfStmt ('eq? cnd #t))]
-                                                 [(Prim op es) (list IfStmt cnd)])
-                                               (list (Goto bthn))
-                                               (list (Goto bels))))
-                            (create-block bthn)
-                            (create-block bels)
-                            (explicate-control-e thn bthn)
-                            (explicate-control-e els bels)))]
-      [_ (begin (hash-set! all-blocks block
-                           (append (hash-ref all-blocks block)
-                                   (list Return e))))]
-      )
-    )
+                          (match cnd
+                            [(Bool b) (begin
+                                        (create-block bthn)
+                                        (create-block bels)
+                                        (explicate-control-e thn bthn control)
+                                        (explicate-control-e els bels control)
+                                        (hash-set! all-blocks block
+                                                   (append
+                                                    (hash-ref all-blocks block)
+                                                    (list
+                                                     (list IfStmt 'eq? cnd #t)
+                                                     (list Goto bthn)
+                                                     (list Goto bels)))))]
+                            [(Prim op es) (begin
+                                            (create-block bthn)
+                                            (create-block bels)
+                                            (explicate-control-e thn bthn control)
+                                            (explicate-control-e els bels control)
+                                            (hash-set! all-blocks block
+                                                       (append
+                                                        (hash-ref all-blocks block)
+                                                        (list (list IfStmt cnd)
+                                                              (list Goto bthn)
+                                                              (list Goto bels)))))]
+
+                            [(If cnd1 thn1 els1) (begin
+                                                   (create-block bthn)
+                                                   (create-block bels)
+                                                   (explicate-control-e thn bthn)
+                                                   (explicate-control-e els bels)
+                                                   (explicate-control-e cnd block (list bthn bels)))]
+
+                             
+                            )
+                          )]
+      [_ (cond
+           [(eq? control '()) (hash-set! all-blocks block
+                                         (append (hash-ref all-blocks block)
+                                                 (list Return e)))]
+           [else (hash-set! all-blocks block
+                            (append (hash-ref all-blocks block)
+                                    (list (list IfStmt e)
+                                          (list Goto (car control))
+                                          (list Goto (cadr control)))))])]
+      ))
   (match p
     [(Program info body) (begin
                            (create-block 'start)
