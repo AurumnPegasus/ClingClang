@@ -5,10 +5,12 @@
 (require "interp-Lvar.rkt")
 (require "interp-Cvar.rkt")
 (require "interp-Lif.rkt")
+(require "interp-Cif.rkt")
 (require "interp.rkt")
 (require "type-check-Lvar.rkt")
 (require "type-check-Cvar.rkt")
 (require "type-check-Lif.rkt")
+(require "type-check-Cif.rkt")
 (require "utilities.rkt")
 (require "priority_queue.rkt")
 (require graph)
@@ -148,16 +150,48 @@
 
 ;; explicate-control : R1 -> C0
 (define (explicate-control p)
-  (define (explicate-control-e e)
+
+  (define all-blocks (make-hash))
+  
+  (define (create-block b)
+    (cond
+      [(hash-has-key? all-blocks b) '()]
+      [else (hash-set! all-blocks b '()) '()]
+      ))
+  
+  (define (explicate-control-e e block)
     (match e
-      [(Let x exp body) (Seq (Assign (Var x) exp) (explicate-control-e body))]
-      [_ (Return e)]
+      [(Let x exp body) (begin (hash-set! all-blocks block
+                                          (append (hash-ref all-blocks block)
+                                                  (list Assign (Var x) exp)))
+                               (explicate-control-e body block))]
+      [(If cnd thn els) (let ([bthn (gensym 'block)] [bels (gensym 'block)])
+                          (begin
+                            (hash-set! all-blocks block
+                                       (append (hash-ref all-blocks block)
+                                               (match cnd
+                                                 [(Bool b) (list IfStmt ('eq? cnd #t))]
+                                                 [(Prim op es) (list IfStmt cnd)])
+                                               (list (Goto bthn))
+                                               (list (Goto bels))))
+                            (create-block bthn)
+                            (create-block bels)
+                            (explicate-control-e thn bthn)
+                            (explicate-control-e els bels)))]
+      [_ (begin (hash-set! all-blocks block
+                           (append (hash-ref all-blocks block)
+                                   (list Return e))))]
       )
     )
   (match p
-    [(Program info body) (CProgram info `((start . , (explicate-control-e body))))])
+    [(Program info body) (begin
+                           (create-block 'start)
+                           (explicate-control-e body 'start)
+                           (display all-blocks)
+                           )])
   )
 
+;(start . , (explicate-control-e body))
 ;; select-instructions
 (define (select_instructions p)
   (define (convert e)
@@ -342,8 +376,8 @@
                               (begin
                                 (hash-set! info `colors x)
                                 (hash-set! info `callee-saved (foldr (lambda (v l) (append (cond
-                                                                                           [(and (hash-has-key? regmap v) (set-member? callee-reg (hash-ref regmap v))) (list (hash-ref regmap v))]
-                                                                                           [else `()]) l)) `() (hash-values x) ))
+                                                                                             [(and (hash-has-key? regmap v) (set-member? callee-reg (hash-ref regmap v))) (list (hash-ref regmap v))]
+                                                                                             [else `()]) l)) `() (hash-values x) ))
                                 (X86Program info body)))])
   )
 
@@ -392,8 +426,8 @@
 
   (define (max-proper-list col)
     (max-list (for/list ([x (hash-keys col)]) (match x
-                                               [(Reg r) -1]
-                                               [_ (hash-ref col x)]))))
+                                                [(Reg r) -1]
+                                                [_ (hash-ref col x)]))))
 
 
   (define (align num)
@@ -472,7 +506,7 @@
     ("shrink", shrink, interp-Lif, type-check-Lif)
     ("uniquify" ,uniquify ,interp-Lif ,type-check-Lif)
     ("remove complex opera*" ,remove-complex-opera* ,interp-Lif ,type-check-Lif)
-    ;("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
+    ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cif)
     ;("instruction selection", select_instructions, interp-pseudo-x86-0)
     ;("uncover life", uncover_live, interp-x86-0)
     ;("build interference", build_interference, interp-x86-0)
