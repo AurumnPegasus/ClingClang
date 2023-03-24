@@ -221,11 +221,11 @@
                                                 (append (hash-ref all-blocks block)
                                                         (car (list
                                                               (match e
-                                                                [(Int n) (append (list(Assign (car flag_var) (Int n))) (list (Goto (cadr flag_var))))]
-                                                                [(Var x) ((Assign (car flag_var) (Var x)) (Goto (cadr flag_var)))]
+                                                                [(Int n) (append (list (Assign (car flag_var) (Int n))) (list (Goto (cadr flag_var))))]
+                                                                [(Var x) (append (list (Assign (car flag_var) (Var x))) (list (Goto (cadr flag_var))))]
                                                                 ;[(Prim 'not es) (IfStmt (Prim 'eq? (list (car es) (Bool #t))) ((Assign (car flag_var) (Bool x)) (Goto (cadr flag_var))) ((Assign (car flag_var) (Int x)) (Goto (cadr flag_var))))]
-                                                                [(Prim op es) ((Assign (car flag_var) (Prim op es)) (Goto (cadr flag_var)))]
-                                                                [(Bool b) ((Assign (car flag_var) (Bool b)) (Goto (cadr flag_var)))])))))] 
+                                                                [(Prim op es) (append (list (Assign (car flag_var) (Prim op es))) (list (Goto (cadr flag_var))))]
+                                                                [(Bool b) (append (list (Assign (car flag_var) (Bool b))) (list (Goto (cadr flag_var))))])))))] 
            [(eq? control '()) (hash-set! all-blocks block
                                          (append (hash-ref all-blocks block)
                                                  (list (Return e))))]
