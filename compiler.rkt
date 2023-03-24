@@ -276,16 +276,16 @@
       [(Seq exp tail) (append (convert exp) (convert tail))]
       [(Goto block) (list (Jmp block))]
       [(Prim `read lst) (list (Callq `read_int 0))]
-      [(Prim 'eq? es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'sete (list (Reg `al))))]
-      [(Prim '> es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setg (list (Reg `al))))]
-      [(Prim '< es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setl (list (Reg `al))))]
-      [(Prim '<= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setle (list (Reg `al))))]
-      [(Prim '>= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setge (list (Reg `al))))]
+      [(Prim 'eq? es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr `set (list `e (Reg `rax))))]
+      [(Prim '> es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'set (list `g (Reg `rax))))]
+      [(Prim '< es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'set (list `l (Reg `rax))))]
+      [(Prim '<= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'set (list `le (Reg `rax))))]
+      [(Prim '>= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'set (list `ge (Reg `rax))))]
       [(Prim op es) (append 
                      (list (Instr `movq (list (convert (car es)) (Reg `rax))))
                      (cond
                        [(and (equal? `- op)(equal? (length es) 1)) (list (Instr `negq (list (Reg `rax))))]
-                       [(and (equal? `not op)(equal? (length es) 1)) (list (Instr `xor (list (Imm 1) (Reg `rax))))]
+                       [(and (equal? `not op)(equal? (length es) 1)) (list (Instr `xorq (list (Imm 1) (Reg `rax))))]
                        [else `()]
                        )
                      (for/list ([i (cdr es)])
@@ -298,7 +298,7 @@
                                             [(Prim '+ es) (list (Instr `movq (list (Reg `rax) x)))]
                                             [(Prim '- es) (list (Instr `movq (list (Reg `rax) x)))]
                                             [(Prim 'not es) (list (Instr `movq (list (Reg `rax) x)))]
-                                            [(Prim op es) (list (Instr `movzbq (list (Reg `al) x)))]))])]
+                                            [(Prim op es) (list (Instr `movzbq (list (Reg `rax) x)))]))])]
       [(IfStmt cnd (Goto bthn) (Goto bels)) (match cnd
                                               [(Prim 'eq? es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (JmpIf 'e bthn) (Jmp bels)) ]
                                               [(Prim '> es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (JmpIf 'g bthn) (Jmp bels))]
