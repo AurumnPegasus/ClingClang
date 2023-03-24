@@ -263,7 +263,7 @@
 ;; select-instructions
 (define (select_instructions p)
   (define (convert e)
-    (display-all "e " e)
+    ;(display-all "e " e)
     (match e
       [(Int n) (Imm n)]
       [(Var r) (Var r)]
@@ -271,6 +271,7 @@
                   ['#t (Imm 1)]
                   ['#f (Imm 0)])]
       [(Seq exp tail) (append (convert exp) (convert tail))]
+      [(Goto block) (list (Jmp block))]
       [(Prim `read lst) (list (Callq `read_int 0))]
       [(Prim 'eq? es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'sete (list (Reg `rax))))]
       [(Prim '> es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setg (list (Reg `rax))))]
@@ -598,7 +599,7 @@
     ("uniquify" ,uniquify ,interp-Lif ,type-check-Lif)
     ("remove complex opera*" ,remove-complex-opera* ,interp-Lif ,type-check-Lif)
     ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cif)
-    ;("instruction selection", select_instructions, interp-pseudo-x86-0)
+    ("instruction selection", select_instructions, interp-pseudo-x86-0)
     ;("uncover life", uncover_live, interp-x86-0)
     ;("build interference", build_interference, interp-x86-0)
     ;("allocate registers", allocate_registers, interp-x86-0)
