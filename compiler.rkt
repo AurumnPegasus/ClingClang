@@ -621,12 +621,12 @@
     [(X86Program info body)
      (begin
        (for ([key (hash-keys body)])
-         (let ([x (replace (hash-ref body `start) (hash-ref info `colors) (length (hash-ref info `callee-saved)))] [max-val (max-proper-list (hash-ref info `colors))])
+         (let ([x (replace (hash-ref body key) (hash-ref info `colors) (length (hash-ref info `callee-saved)))] [max-val (max-proper-list (hash-ref info `colors))])
            (begin
              (cond
                [(>= max-val numpos) (hash-set! info 'stack-space (- (align (* 8 (+ (+ (- max-val numpos) 1) (length (hash-ref info `callee-saved))))) (* 8 (length (hash-ref info `callee-saved)))))]
                [else (hash-set! info 'stack-space (- (align (length (hash-ref info `callee-saved))) (* 8 (length (hash-ref info `callee-saved)))))])
-             (hash-ref body key (Block `() x)))))
+             (hash-set! body key (Block `() x)))))
        (X86Program info body))])
   )
 
@@ -707,11 +707,11 @@
     ("uniquify" ,uniquify ,interp-Lif ,type-check-Lif)
     ("remove complex opera*" ,remove-complex-opera* ,interp-Lif ,type-check-Lif)
     ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cif)
-    ("instruction selection", select_instructions, interp-pseudo-x86-0)
-    ("uncover live", uncover_live, interp-x86-0)
-    ("build interference", build_interference, interp-x86-0)
-    ("allocate registers", allocate_registers, interp-x86-0)
-    ("assign homes", assign_homes, interp-x86-0)
-    ("patch instructions", patch_instructions, interp-x86-0)
-    ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
+    ("instruction selection", select_instructions, interp-pseudo-x86-1)
+    ("uncover live", uncover_live, interp-x86-1)
+    ("build interference", build_interference, interp-x86-1)
+    ("allocate registers", allocate_registers, interp-x86-1)
+    ("assign homes", assign_homes, interp-x86-1)
+    ("patch instructions", patch_instructions, interp-x86-1)
+    ("prelude and conclusion", prelude-and-conclusion, interp-x86-1)
     ))
