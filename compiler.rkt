@@ -7,6 +7,7 @@
 (require "interp-Lif.rkt")
 (require "interp-Cif.rkt")
 (require "interp.rkt")
+(require "multigraph.rkt")
 (require "type-check-Lvar.rkt")
 (require "type-check-Cvar.rkt")
 (require "type-check-Lif.rkt")
@@ -45,6 +46,8 @@
                             (-5 r15)
                             (rcx -6)
                             (-6 rcx)
+                            (al -7)
+                            (-7 al)
                             (r14 0)
                             (0 r14)
                             (rdx 1)
@@ -262,7 +265,7 @@
 
 ;; select-instructions
 (define (select_instructions p)
-  (define (convert e)
+  (define (convert e [flag 0])
     ;(display-all "e " e)
     (match e
       [(Int n) (Imm n)]
@@ -273,11 +276,11 @@
       [(Seq exp tail) (append (convert exp) (convert tail))]
       [(Goto block) (list (Jmp block))]
       [(Prim `read lst) (list (Callq `read_int 0))]
-      [(Prim 'eq? es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'sete (list (Reg `rax))))]
-      [(Prim '> es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setg (list (Reg `rax))))]
-      [(Prim '< es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setl (list (Reg `rax))))]
-      [(Prim '<= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setle (list (Reg `rax))))]
-      [(Prim '>= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setge (list (Reg `rax))))]
+      [(Prim 'eq? es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'sete (list (Reg `al))))]
+      [(Prim '> es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setg (list (Reg `al))))]
+      [(Prim '< es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setl (list (Reg `al))))]
+      [(Prim '<= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setle (list (Reg `al))))]
+      [(Prim '>= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'setge (list (Reg `al))))]
       [(Prim op es) (append 
                      (list (Instr `movq (list (convert (car es)) (Reg `rax))))
                      (cond
@@ -290,13 +293,18 @@
                          [(equal? '+ op) (Instr `addq (list (convert i) (Reg `rax)))]
                          [(equal? '- op) (Instr `subq (list (convert i) (Reg `rax)))])))]
       [(Assign x val) (cond [(is-atomic? val) (list (Instr `movq (list (convert val) (convert x))))]
-                            [else (append (convert val) (list (Instr `movq (list (Reg `rax) x))))])]
+                            [else (append (convert val)
+                                          (match val
+                                            [(Prim '+ es) (list (Instr `movq (list (Reg `rax) x)))]
+                                            [(Prim '- es) (list (Instr `movq (list (Reg `rax) x)))]
+                                            [(Prim 'not es) (list (Instr `movq (list (Reg `rax) x)))]
+                                            [(Prim op es) (list (Instr `movzbq (list (Reg `al) x)))]))])]
       [(IfStmt cnd (Goto bthn) (Goto bels)) (match cnd
-                                              [(Prim 'eq? es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'je (list bthn)) (Instr 'jmp (list bels))) ]
-                                              [(Prim '> es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'jg (list bthn)) (Instr 'jmp (list bels)))]
-                                              [(Prim '< es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'jl (list bthn)) (Instr 'jmp (list bels)))]
-                                              [(Prim '>= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'jge (list bthn)) (Instr 'jmp (list bels)))]
-                                              [(Prim '<= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (Instr 'jle (list bthn)) (Instr 'jmp (list bels)))]
+                                              [(Prim 'eq? es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (JmpIf 'e bthn) (Jmp bels)) ]
+                                              [(Prim '> es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (JmpIf 'g bthn) (Jmp bels))]
+                                              [(Prim '< es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (JmpIf 'l bthn) (Jmp bels))]
+                                              [(Prim '>= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (JmpIf 'ge bthn) (Jmp bels))]
+                                              [(Prim '<= es) (list (Instr `cmpq (list (convert (car es)) (convert (cadr es)))) (JmpIf 'le bthn) (Jmp bels))]
                                               )]
       [(Return e) (cond
                     [(is-atomic? e) (list (Instr `movq (list (convert e) (Reg `rax))) (Jmp 'conclusion))]
@@ -317,7 +325,39 @@
 ;; uncover live
 (define (uncover_live p)
 
-  (define gset set)
+  (define block-graph (make-multigraph `()))
+
+  (define (get-graph all-blocks)
+    
+    (define (recurse node-label)
+      ;(display-all " key " node-label)
+      
+      (match (hash-ref all-blocks node-label)
+        [(Block info body) (begin
+                             ( for ([instr body]) (match instr
+                                                    [(Jmp label) (begin
+                                                                   ;(display-all " 1 " )
+                                                                   (add-vertex! block-graph node-label)
+                                                                   (add-vertex! block-graph label)
+                                                                   (add-directed-edge! block-graph node-label label))]
+                                                    [(JmpIf cc label) (begin
+                                                                        ;    (display-all " 2 " )
+                                                                        (add-vertex! block-graph node-label)
+                                                                        (add-vertex! block-graph label)
+                                                                        (add-directed-edge! block-graph node-label label))]
+                                                    [_ `()]
+                                                    ))
+                             ;                     (display-all " graph nodes " (get-vertices block-graph ))
+                             )]))
+
+    
+    (for ([key (hash-keys all-blocks)]) (recurse key))
+    ; (display-all " graph nodes " (get-vertices block-graph ))
+    )
+
+  (define lbefore-set (make-hash))
+  (define lafter-set (make-hash))
+  (define lall-set (make-hash))
 
   (define (get-set read write prev_set)
     (set! write (for/set ([w write]) (cond
@@ -332,29 +372,67 @@
     )
 
   (define (calc instr prev_set)
+    ;(display-all " instr " instr " prev set " prev_set)
     (match instr
       [(Instr 'movq lst) (get-set (set (car lst)) (set (cadr lst)) prev_set)]
       [(Instr 'addq lst) (get-set (set (car lst) (cadr lst)) (set (cadr lst)) prev_set)]
       [(Instr 'subq lst) (get-set (set (car lst) (cadr lst)) (set (cadr lst)) prev_set)]
       [(Instr 'negq lst) (get-set (set (car lst)) (set (car lst)) prev_set)]
-      [(Jmp label) (get-set (set (Reg 'rax) (Reg 'rsp)) (set) (prev_set))]
+      [(Instr 'cmpq lst) (get-set (set (car lst) (cadr lst)) `() prev_set)]
+      [(Instr 'xorq lst) (get-set (set (cadr lst) (cadr lst)) `() prev_set)]
+      [(JmpIf cc label) prev_set]
+      [(Jmp label) prev_set]
       [(Callq label n) (get-set (set) caller-reg prev_set)]
+      [_ prev_set]
       ))
   
-  (define (aux b)
+  (define (aux node-label b lbefore r-graph)
+    (define gset lbefore)
+    ;(display-all "node-label: " node-label)
     (match b
-      [(Block info body) (for/list ([instr (reverse body)]) (let ([lafter (calc instr gset)])
-                                                              (begin
-                                                                (set! gset lafter)
-                                                                lafter)))]
+      [(Block info body) (begin
+                           
+                           (hash-set! lall-set node-label (reverse
+                                                           (for/list ([instr (reverse body)])
+                                                             (let ([lafter (calc instr gset)])
+                                                               (begin
+                                                                 (set! gset lafter)
+                                                                 lafter)))))
+                           
+                           (for ([node (get-neighbors r-graph node-label)])
+                             (hash-set! lbefore-set node (set-union (hash-ref lbefore-set node) gset)))
+                           ;(display " 2 " )
+                           (hash-set! lafter-set node-label gset))]
+      [_ (for ([node (get-neighbors r-graph node-label)])
+           (hash-set! lbefore-set node
+                      (set-union (hash-ref lbefore-set node) lbefore)))]
       )
     )
+
+  (define ht (make-hash))
   
   (match p
-    [(X86Program info body) (let ([x (reverse (aux (hash-ref body `start)))] [ht (make-hash)])
-                              (begin
-                                (hash-set! ht 'live x)
-                                (X86Program ht body)))])
+    [(X86Program info body) (begin
+                              (get-graph body)
+                              ;(display-all " vertices " (get-vertices block-graph))
+                              (for ([node (get-vertices block-graph)]) (begin
+                                                                         (hash-set! lafter-set node (set))
+                                                                         (hash-set! lbefore-set node (set))))
+                              
+                              (let ([r-graph (transpose block-graph)] [temp-body body])
+                                (begin
+                                  ;(display-all "tsort" (tsort r-graph))
+                                  (hash-set! temp-body `conclusion `())
+                                  (hash-set! lbefore-set `conclusion (set (Reg `rax) (Reg `rsp)))
+                                  (hash-set! lafter-set `conclusion (set (Reg `rax) (Reg `rsp)))
+                                  (for ([node-label (tsort r-graph)])
+                                    ;(display-all " node-label loop " node-label)
+                                    (aux node-label (hash-ref temp-body node-label) (hash-ref lbefore-set node-label) r-graph))))
+                              ;(display-all " problem over " )
+                              (hash-set! ht `live lall-set)
+                              (hash-remove! body `conclusion)
+                              (X86Program ht body)
+                              )])
   )
 
 
@@ -364,6 +442,7 @@
   (define g (undirected-graph '()))
   
   (define (add-edges write lafter)
+    
     (for ([l (set-subtract lafter (set write))]) (add-edge! g write l))
     )
 
@@ -375,19 +454,29 @@
                            (match instr
                              [(Instr `movq (list (Imm x) n)) (add-edges n lafter)]
                              [(Instr `movq (list m n)) (add-edges n (set-subtract lafter (set m)))]
+                             [(Instr `movzbq (list m n)) (add-edges n (set-subtract lafter (set m)))]
+                             [(Instr `cmpq (list m n)) `()]
+                             [(Instr 'sete r) '()]
+                             [(Instr 'setg r) '()]
+                             [(Instr 'setge r) '()]
+                             [(Instr 'setl r) '()]
+                             [(Instr 'setle r) '()]
                              [(Instr label lst) (add-edges (last lst) lafter)]
-                             [(Jmp label) (add-edge! g (Reg 'rax) (Reg 'rsp))]
+                             [(Jmp 'conclusion) (add-edge! g (Reg 'rax) (Reg 'rsp))]
                              [(Callq label n) (for ([w caller-reg]) (add-edges (Reg w) lafter))]
+                             [_ '()]
                              ))]
       ))
   
   
   (match p
-    [(X86Program info body) (let ([x (aux (hash-ref body `start) (hash-ref info `live))])
-                              (begin
-                                (hash-set! info 'conflicts g)
-                                (hash-set! info 'edges (get-edges g))
-                                (X86Program info body)))])
+    [(X86Program info body) (begin
+                              (for ([key (hash-keys body)])
+                                (let ([x (aux (hash-ref body key) (hash-ref (hash-ref info `live) key))])
+                                  (begin
+                                    (hash-set! info 'conflicts g)
+                                    (hash-set! info 'edges (get-edges g)))))
+                              (X86Program info body))])
   )
 
 ;;allocate registers
@@ -506,7 +595,9 @@
                                 (for/list ([r (reverse cs-list)]) (Instr 'popq (list (Reg r))))
                                 ) caller-saved))]
 
-      [(Jmp label) (list (list (Jmp label)) caller-saved)])
+      [(Jmp label) (list (list (Jmp label)) caller-saved)]
+      [(JmpIf cc label) (list (list (JmpIf cc label)) caller-saved)]
+      )
     )
 
   (define (max-element x y) (if (> x y) x y))
@@ -527,13 +618,16 @@
     )
                            
   (match p
-    [(X86Program info body) (let ([x (replace (hash-ref body `start) (hash-ref info `colors) (length (hash-ref info `callee-saved)))] [max-val (max-proper-list (hash-ref info `colors))])
-                              (begin
-                                ;(display-all " max-val " max-val " numpos " numpos " callee saved" (hash-ref info `callee-saved) " len " (length (hash-ref info `callee-saved)))
-                                (cond
-                                  [(>= max-val numpos) (hash-set! info 'stack-space (- (align (* 8 (+ (+ (- max-val numpos) 1) (length (hash-ref info `callee-saved))))) (* 8 (length (hash-ref info `callee-saved)))))]
-                                  [else (hash-set! info 'stack-space (- (align (length (hash-ref info `callee-saved))) (* 8 (length (hash-ref info `callee-saved)))))])
-                                (X86Program info (hash `start (Block `() x)))))])
+    [(X86Program info body)
+     (begin
+       (for ([key (hash-keys body)])
+         (let ([x (replace (hash-ref body `start) (hash-ref info `colors) (length (hash-ref info `callee-saved)))] [max-val (max-proper-list (hash-ref info `colors))])
+           (begin
+             (cond
+               [(>= max-val numpos) (hash-set! info 'stack-space (- (align (* 8 (+ (+ (- max-val numpos) 1) (length (hash-ref info `callee-saved))))) (* 8 (length (hash-ref info `callee-saved)))))]
+               [else (hash-set! info 'stack-space (- (align (length (hash-ref info `callee-saved))) (* 8 (length (hash-ref info `callee-saved)))))])
+             (hash-ref body key (Block `() x)))))
+       (X86Program info body))])
   )
 
 ;; patch instructions
@@ -542,6 +636,15 @@
     (match e
       [(Block info instr) (foldl (lambda (i l) (append l (patchify i))) `() instr)]
       [(Instr `movq (list a a)) `()]
+      [(Instr `movzbq (list (Reg r) (Deref reg1 val1))) (list
+                                                         (Instr `movzbq (list (Reg r) (Reg `rcx)))
+                                                         (Instr `movq (list (Reg `rcx) (Deref reg1 val1))))]
+      [(Instr `cmpq (list a (Imm n))) (list
+                                       (Instr `movq (list (Imm n) (Reg `rcx)))
+                                       (Instr `cmpq (list a (Reg `rcx))))]
+      [(Instr `cmpq (list (Deref reg1 val1) (Deref reg2 val2))) (list
+                                                                 (Instr `movq (list (Deref reg1 val1) (Reg `rcx)))
+                                                                 (Instr `cmpq (list (Reg `rcx) (Deref reg2 val2))))]
       [(Instr label lst) (cond
                            [(equal? 1 (length lst)) (list (Instr label lst))]
                            [else
@@ -560,10 +663,13 @@
                               [_ (list (Instr label lst))])]
                            )]
       [(Callq label n) (list (Callq label n))]
+      [(JmpIf cc label) (list (JmpIf cc label))]
       [(Jmp label) (list (Jmp label))])) 
   (match p
-    [(X86Program info body) (X86Program info (hash 'start (Block '() (patchify (hash-ref body `start)))))])
-  )
+    [(X86Program info body) (begin
+                              (for ([key (hash-keys body)])
+                                (hash-set! body key (Block '() (patchify (hash-ref body key)))))
+                              (X86Program info body))]))
 
 ;; prelude and conclude
 (define (prelude-and-conclusion p)
@@ -584,9 +690,11 @@
      (list (Retq))))
 
   (match p
-    [(X86Program info body) (X86Program info (hash `start (hash-ref body `start)
-                                                   `main (Block `() (get-prelude (hash-ref info `stack-space) (hash-ref info `callee-saved)))
-                                                   `conclusion (Block `() (get-conclusion (hash-ref info `stack-space) (hash-ref info `callee-saved)))))])
+    [(X86Program info body) (begin
+                              (hash-set! body `main (Block `() (get-prelude (hash-ref info `stack-space) (hash-ref info `callee-saved))))
+                              (hash-set! body `conclusion (Block `() (get-conclusion (hash-ref info `stack-space) (hash-ref info `callee-saved))))
+                              (X86Program info body))])
+                                               
   )
   
 ;; Define the compiler passes to be used by interp-tests and they grader
@@ -600,10 +708,10 @@
     ("remove complex opera*" ,remove-complex-opera* ,interp-Lif ,type-check-Lif)
     ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cif)
     ("instruction selection", select_instructions, interp-pseudo-x86-0)
-    ;("uncover life", uncover_live, interp-x86-0)
-    ;("build interference", build_interference, interp-x86-0)
-    ;("allocate registers", allocate_registers, interp-x86-0)
-    ;("assign homes", assign_homes, interp-x86-0)
-    ;("patch instructions", patch_instructions, interp-x86-0)
-    ;("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
+    ("uncover live", uncover_live, interp-x86-0)
+    ("build interference", build_interference, interp-x86-0)
+    ("allocate registers", allocate_registers, interp-x86-0)
+    ("assign homes", assign_homes, interp-x86-0)
+    ("patch instructions", patch_instructions, interp-x86-0)
+    ("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
     ))
