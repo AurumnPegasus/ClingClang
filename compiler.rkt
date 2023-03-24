@@ -161,25 +161,26 @@
   
   (define (explicate-control-e e block [control '()] [flag_var '()])
     ;(display-all "e: " e "start: " (hash-ref all-blocks 'start))
+    ;(display-all " e: " e " flag_var: " flag_var)
     (match e
       [(Let x exp body) (match exp
                           [(If cnd thn els) (let ([bbody (gensym 'block)])
                                               (begin
                                                 (create-block bbody)
-                                                (explicate-control-e body bbody)
+                                                (explicate-control-e body bbody control flag_var)
                                                 (explicate-control-e exp block control (list (Var x) bbody))))]
                           [_ (begin (hash-set! all-blocks block
                                                (append (hash-ref all-blocks block)
                                                        (list (Assign (Var x) exp))))
-                                    (explicate-control-e body block))])]
+                                    (explicate-control-e body block control flag_var))])]
 
       [(If cnd thn els) (let ([bthn (gensym 'block)] [bels (gensym 'block)])
                           (match cnd
                             [(Var x) (begin
                                        (create-block bthn)
                                        (create-block bels)
-                                       (explicate-control-e thn bthn control)
-                                       (explicate-control-e els bels control)
+                                       (explicate-control-e thn bthn control flag_var)
+                                       (explicate-control-e els bels control flag_var)
                                        (hash-set! all-blocks block
                                                   (append
                                                    (hash-ref all-blocks block)
@@ -187,8 +188,8 @@
                             [(Bool b) (begin
                                         (create-block bthn)
                                         (create-block bels)
-                                        (explicate-control-e thn bthn control)
-                                        (explicate-control-e els bels control)
+                                        (explicate-control-e thn bthn control flag_var)
+                                        (explicate-control-e els bels control flag_var)
                                         (hash-set! all-blocks block
                                                    (append
                                                     (hash-ref all-blocks block)
@@ -196,8 +197,8 @@
                             [(Prim op es) (begin
                                             (create-block bthn)
                                             (create-block bels)
-                                            (explicate-control-e thn bthn control)
-                                            (explicate-control-e els bels control)
+                                            (explicate-control-e thn bthn control flag_var)
+                                            (explicate-control-e els bels control flag_var)
                                             (hash-set! all-blocks block
                                                        (append
                                                         (hash-ref all-blocks block)
@@ -208,9 +209,9 @@
                             [(If cnd1 thn1 els1) (begin
                                                    (create-block bthn)
                                                    (create-block bels)
-                                                   (explicate-control-e thn bthn control)
-                                                   (explicate-control-e els bels control)
-                                                   (explicate-control-e cnd block (list bthn bels)))]
+                                                   (explicate-control-e thn bthn control flag_var)
+                                                   (explicate-control-e els bels control flag_var)
+                                                   (explicate-control-e cnd block (list bthn bels) flag_var))]
 
                              
                             )
@@ -218,13 +219,13 @@
       [_ (cond
            [(not (eq? flag_var '())) (hash-set! all-blocks block
                                                 (append (hash-ref all-blocks block)
-                                                        (list
-                                                         (match e
-                                                           [(Int n) ((Assign (car flag_var) (Int n)) (Goto (cadr flag_var)))]
-                                                           [(Var x) ((Assign (car flag_var) (Var x)) (Goto (cadr flag_var)))]
-                                                           ;[(Prim 'not es) (IfStmt (Prim 'eq? (list (car es) (Bool #t))) ((Assign (car flag_var) (Bool x)) (Goto (cadr flag_var))) ((Assign (car flag_var) (Int x)) (Goto (cadr flag_var))))]
-                                                           [(Prim op es) ((Assign (car flag_var) (Prim op es)) (Goto (cadr flag_var)))]
-                                                           [(Bool b) ((Assign (car flag_var) (Bool b)) (Goto (cadr flag_var)))]))))] 
+                                                        (car (list
+                                                              (match e
+                                                                [(Int n) (append (list(Assign (car flag_var) (Int n))) (list (Goto (cadr flag_var))))]
+                                                                [(Var x) ((Assign (car flag_var) (Var x)) (Goto (cadr flag_var)))]
+                                                                ;[(Prim 'not es) (IfStmt (Prim 'eq? (list (car es) (Bool #t))) ((Assign (car flag_var) (Bool x)) (Goto (cadr flag_var))) ((Assign (car flag_var) (Int x)) (Goto (cadr flag_var))))]
+                                                                [(Prim op es) ((Assign (car flag_var) (Prim op es)) (Goto (cadr flag_var)))]
+                                                                [(Bool b) ((Assign (car flag_var) (Bool b)) (Goto (cadr flag_var)))])))))] 
            [(eq? control '()) (hash-set! all-blocks block
                                          (append (hash-ref all-blocks block)
                                                  (list (Return e))))]
@@ -597,7 +598,7 @@
     ("uniquify" ,uniquify ,interp-Lif ,type-check-Lif)
     ("remove complex opera*" ,remove-complex-opera* ,interp-Lif ,type-check-Lif)
     ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cif)
-    ("instruction selection", select_instructions, interp-pseudo-x86-0)
+    ;("instruction selection", select_instructions, interp-pseudo-x86-0)
     ;("uncover life", uncover_live, interp-x86-0)
     ;("build interference", build_interference, interp-x86-0)
     ;("allocate registers", allocate_registers, interp-x86-0)
