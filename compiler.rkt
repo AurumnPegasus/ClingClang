@@ -3,6 +3,7 @@
 (require racket/fixnum)
 (require "interp-Lint.rkt")
 (require "interp-Lvar.rkt")
+(require "interp-Lfun.rkt")
 (require "interp-Cvar.rkt")
 (require "interp-Lif.rkt")
 (require "interp-Cif.rkt")
@@ -11,6 +12,8 @@
 (require "type-check-Lvar.rkt")
 (require "type-check-Cvar.rkt")
 (require "type-check-Lif.rkt")
+(require "type-check-Lfun.rkt")
+(require "type-check-Cfun.rkt")
 (require "type-check-Cif.rkt")
 (require "utilities.rkt")
 (require "priority_queue.rkt")
@@ -87,7 +90,12 @@
       [_ e])
     )
   (match p
-    [(Program info body) (Program info (shrink-e body))]))
+    [(ProgramDefsExp info defs exp) 
+    (ProgramDefs info 
+      (append 
+        (for/list ([fn defs]) (shrink-e fn)) 
+        (list (Def `main `() `Integer `() (shrink-e exp))))
+    )]))
 
 
 (define (uniquify p)
@@ -703,15 +711,15 @@
 (define compiler-passes
   `( 
     ;; Uncomment the following passes as you finish them.
-    ("shrink", shrink, interp-Lif, type-check-Lif)
-    ("uniquify" ,uniquify ,interp-Lif ,type-check-Lif)
-    ("remove complex opera*" ,remove-complex-opera* ,interp-Lif ,type-check-Lif)
-    ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cif)
-    ("instruction selection", select_instructions, interp-pseudo-x86-1)
-    ("uncover live", uncover_live, interp-x86-1)
-    ("build interference", build_interference, interp-x86-1)
-    ("allocate registers", allocate_registers, interp-x86-1)
-    ("assign homes", assign_homes, interp-x86-1)
-    ("patch instructions", patch_instructions, interp-x86-1)
-    ("prelude and conclusion", prelude-and-conclusion, interp-x86-1)
+    ("shrink", shrink, interp-Lfun, type-check-Lfun)
+    ;;; ("uniquify" ,uniquify ,interp-Lif ,type-check-Lif)
+    ;;; ("remove complex opera*" ,remove-complex-opera* ,interp-Lif ,type-check-Lif)
+    ;;; ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cif)
+    ;;; ("instruction selection", select_instructions, interp-pseudo-x86-1)
+    ;;; ("uncover live", uncover_live, interp-x86-1)
+    ;;; ("build interference", build_interference, interp-x86-1)
+    ;;; ("allocate registers", allocate_registers, interp-x86-1)
+    ;;; ("assign homes", assign_homes, interp-x86-1)
+    ;;; ("patch instructions", patch_instructions, interp-x86-1)
+    ;;; ("prelude and conclusion", prelude-and-conclusion, interp-x86-1)
     ))
