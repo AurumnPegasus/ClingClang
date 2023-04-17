@@ -55,6 +55,14 @@
              [`(Vectorof ,t)
               (values (Prim 'vectorof-length (list e1^))  'Integer)]
              [else ((super type-check-exp env) e)])]
+<<<<<<< HEAD
+=======
+
+          ;;; [(AllocateHom e1 t)
+          ;;;  (define-values (e1^ t1) (recur e1))
+          ;;;  (check-type-equal? t1 'Integer e)
+          ;;;  (values (AllocateHom e1^ t) t)]
+>>>>>>> 63f2ef0bb2e0e77d01760bd651182c510d9865bf
           
           [else ((super type-check-exp env) e)])))
     ))

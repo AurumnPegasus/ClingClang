@@ -16,7 +16,11 @@
     (define/override (free-vars-exp e)
       (define (recur e) (send this free-vars-exp e))
       (match e
+<<<<<<< HEAD
         ;[(AllocateHom e-len ty) (recur e-len)]
+=======
+        ;;; [(AllocateHom e-len ty) (recur e-len)]
+>>>>>>> 63f2ef0bb2e0e77d01760bd651182c510d9865bf
 	[else (super free-vars-exp e)]))
 
     ))
