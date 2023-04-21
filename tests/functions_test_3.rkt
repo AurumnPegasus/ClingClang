@@ -1,3 +1,2 @@
- (define (id [x : Integer]) : Integer x)
- (define [y : Integer] 32)
- (id 42)
+ (define (id [x : Integer] [y : Integer]) : Integer (+ x y))
+ (id 3 5)
