@@ -6,6 +6,7 @@
 (require "interp-Cvar.rkt")
 (require "interp-Lif.rkt")
 (require "interp-Cif.rkt")
+(require "interp-Cfun.rkt")
 (require "interp-Lfun.rkt")
 (require "interp.rkt")
 (require "type-check-Lvar.rkt")
@@ -158,11 +159,45 @@
       (final-flat-r (cadr fexpr))))
 
   (match p
-    [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs]) (match e
-                                                                      [(Def name params rty info body) (Def name params rty info (final-flat body))])))]
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs])
+                                                 (match e
+                                                   [(Def name params rty info body)
+                                                    (Def name params rty info (final-flat body))])))]
     ;[(Program info body) (Program info (final-flat body))]
     )
   )
+
+(define (explicate-control p)
+    
+  (define (explicate-control-e e)
+    (match e
+      [(Let x exp body) 
+       (let ([re (explicate-control-e body)]) 
+         (Seq (Assign (Var x) (explicate-control-f exp)) re))]
+      ;[(Let x exp body) (Seq (Assign (Var x) (explicate-control-f exp)) (explicate-control-f body))]
+      [(Apply fun exps) (TailCall fun exps)]
+      [_ (Return e)]  )
+    )
+  
+  (define (explicate-control-f e)
+    (match e
+      [(Let x exp body) (Seq (Assign (Var x) (explicate-control-f exp)) (explicate-control-e body))]
+      [(Apply fun exps) (Call fun exps)]
+      [_ e])
+    )
+  (match p
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs])
+                                                 (match e
+                                                   [(Def name params rty info1 body)
+                                                    (begin
+                                                      (define blocks (make-hash))
+                                                      (hash-set! blocks
+                                                                 (string->symbol
+                                                                  (string-append
+                                                                   (symbol->string name) (symbol->string 'start)))
+                                                                 (explicate-control-e body))
+                                                      (Def name params rty info1 blocks))])))]
+    ))
     
 ;; Define the compiler passes to be used by interp-tests and they grader
 ;; Note that your compiler file (the file that defines the passes)
@@ -174,7 +209,7 @@
     ("uniquify" ,uniquify ,interp-Lfun ,type-check-Lfun)
     ("reveal-functions" ,reveal-functions ,interp-Lfun ,type-check-Lfun)
     ("remove complex opera*" ,remove-complex-opera* ,interp-Lfun ,type-check-Lfun)
-    ;("explicate control" ,explicate-control ,interp-Cif ,type-check-Cif)
+    ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cfun)
     ;("instruction selection", select_instructions, interp-pseudo-x86-0)
     ;("uncover life", uncover_live, interp-x86-0)
     ;("build interference", build_interference, interp-x86-0)
