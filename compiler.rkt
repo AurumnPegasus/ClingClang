@@ -163,40 +163,116 @@
                                                  (match e
                                                    [(Def name params rty info body)
                                                     (Def name params rty info (final-flat body))])))]
-    ;[(Program info body) (Program info (final-flat body))]
+    [(Program info body) (Program info (final-flat body))]
     )
   )
 
 (define (explicate-control p)
+
+  (define all-blocks (make-hash))
+
+  (define (create-block b)
+    (cond
+      [(hash-has-key? all-blocks b)]
+      [else (hash-set! all-blocks b null)]
+      ))
+
+  (define (add_to blk instr)
+    ;(display-all instr)
+    (begin
+      (hash-set! all-blocks blk (append (hash-ref all-blocks blk) (list instr)))
+      instr)
+    )
     
-  (define (explicate-control-e e)
+  (define (explicate-control-e e blk)
     (match e
-      [(Let x exp body) 
-       (let ([re (explicate-control-e body)]) 
-         (Seq (Assign (Var x) (explicate-control-f exp)) re))]
-      ;[(Let x exp body) (Seq (Assign (Var x) (explicate-control-f exp)) (explicate-control-f body))]
-      [(Apply fun exps) (TailCall fun exps)]
-      [_ (Return e)]  )
-    )
+      [(Int n) (add_to blk (Return e))]
+      [(Var x) (add_to blk (Return e))]
+      [(Bool b) (add_to blk (Return e))]
+      [(Prim op es) (add_to blk (Return e))]
+      [(Let x exp body)
+       (begin
+         (explicate-control-f exp x null blk)
+         (explicate-control-e body blk))]
+      [(If cnd thn els) (let ([bthn (gensym 'block)] [bels (gensym 'block)])
+                          (begin
+                            (create-block bthn)
+                            (create-block bels)
+                            (explicate-control-e thn bthn)
+                            (explicate-control-e els bels)
+                            (explicate-control-g cnd null null blk bthn bels)
+                            ))]
+      [(Apply fun exps) (add_to blk (TailCall fun exps))]))
   
-  (define (explicate-control-f e)
+  (define (explicate-control-f e x body blk)
     (match e
-      [(Let x exp body) (Seq (Assign (Var x) (explicate-control-f exp)) (explicate-control-e body))]
-      [(Apply fun exps) (Call fun exps)]
-      [_ e])
+      [(Apply fun exps) (add_to blk (Assign (Var x) (Call fun exps)))]
+      [(If cnd thn els) (let ([bthn (gensym 'block)] [bels (gensym 'block)])
+                          (begin
+                            (create-block bthn)
+                            (create-block bels)
+                            (explicate-control-f thn x body bthn)
+                            (explicate-control-f els x body bels)
+                            (explicate-control-g cnd null null blk bthn bels)
+                            ))]
+      [_ (cond
+           [(null? x) e]
+           [(null? body) (add_to blk (Assign (Var x) e))]
+           [else (add_to blk (Assign (Var x) e))])]))
+
+  (define (explicate-control-g cnd thn els blk blkthn blkels)
+    (match cnd
+      [(Bool #t) (add_to blk (IfStmt (Prim 'eq? (list cnd cnd)) (Goto blkthn) (Goto blkels)))]
+      [(Bool #f) (add_to blk (IfStmt (Prim 'eq? (list cnd cnd)) (Goto blkthn) (Goto blkels)))]
+      [(Var x) (add_to blk ((IfStmt (Prim 'eq? (list x #t)) (Goto blkthn) (Goto blkels))))]
+      [(Let x exp body) 
+       (let ([rbody (explicate-control-g body null null blk blkthn blkels)])
+         (let ([rexp (explicate-control-f exp x rbody blk)]) rexp))] 
+      [(If cnd1 thn1 els1)
+       (let ([bthn1 (gensym 'block)]
+             [bels1 (gensym 'block)])
+         (begin
+           (create-block bthn1)
+           (create-block bels1)
+           (explicate-control-g thn1 null null bthn1 blkthn blkels)
+           (explicate-control-g els1 null null bels1 blkthn blkels)
+           (explicate-control-g cnd1 null null blk bthn1 bels1) 
+           ))]
+      [(Apply fun exps) (add_to blk (IfStmt (Call fun exps) (Goto blkthn) (Goto blkels)))]
+      [_ (add_to blk (IfStmt cnd (Goto blkthn) (Goto blkels)))])
     )
+
+  (define (getSeqGo e)
+    (cond
+      [(equal? 1 (length e)) (car e)]
+      [else
+       (Seq (car e) (getSeqGo (cdr e)))]))
+  
   (match p
     [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs])
                                                  (match e
                                                    [(Def name params rty info1 body)
                                                     (begin
-                                                      (define blocks (make-hash))
-                                                      (hash-set! blocks
-                                                                 (string->symbol
-                                                                  (string-append
-                                                                   (symbol->string name) (symbol->string 'start)))
-                                                                 (explicate-control-e body))
-                                                      (Def name params rty info1 blocks))])))]
+                                                      (set! all-blocks (make-hash))
+                                                      (create-block (string->symbol
+                                                                          (string-append
+                                                                           (symbol->string name) (symbol->string 'start))))
+                                                      (explicate-control-e body (string->symbol
+                                                                          (string-append
+                                                                           (symbol->string name) (symbol->string 'start))))
+                                                      (let ([block-keys (hash-keys all-blocks)])
+                                                        (for ([key block-keys])
+                                                            (hash-set! all-blocks key (getSeqGo (hash-ref all-blocks key)))))
+                                                      ;(display-all all-blocks)
+                                                      (Def name params rty info1 all-blocks))])))]
+    [(Program info body) (CProgram info
+                                   (begin
+                                     (create-block 'start)
+                                     (explicate-control-e body 'start)
+                                     (let ([block-keys (hash-keys all-blocks)])
+                                       (for ([key block-keys])
+                                         (hash-set! all-blocks key (getSeqGo (hash-ref all-blocks key)))))
+                                     all-blocks))]
     ))
     
 ;; Define the compiler passes to be used by interp-tests and they grader
@@ -208,7 +284,7 @@
     ("shrink", shrink, interp-Lfun, type-check-Lfun)
     ("uniquify" ,uniquify ,interp-Lfun ,type-check-Lfun)
     ("reveal-functions" ,reveal-functions ,interp-Lfun ,type-check-Lfun)
-    ("remove complex opera*" ,remove-complex-opera* ,interp-Lfun ,type-check-Lfun)
+    ("remove complex opera*" ,remove-complex-opera* ,interp-Lfun, type-check-Lfun)
     ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cfun)
     ;("instruction selection", select_instructions, interp-pseudo-x86-0)
     ;("uncover life", uncover_live, interp-x86-0)
