@@ -8,6 +8,7 @@
 (require "interp-Cif.rkt")
 (require "interp-Cfun.rkt")
 (require "interp-Lfun.rkt")
+(require "interp-Lfun-prime.rkt")
 (require "interp.rkt")
 (require "type-check-Lvar.rkt")
 (require "type-check-Cvar.rkt")
@@ -57,12 +58,15 @@
 (define ht-fun (make-hash))
 (define ht-fun-len (make-hash))
 
-(define (uniquify p [ht (make-hash)] )
-  ;(display-all "p: " p)
+(define (uniquify p [ht (make-hash)] [flag 0])
   (match p
     [(Int n) (Int n)]
     [(Bool b) (Bool b)]
     [(Var x) (cond
+               [(equal? flag 1) (cond
+                                  [(hash-has-key? ht-fun x) (Var (hash-ref ht-fun x))]
+                                  [(hash-has-key? ht x) (Var (hash-ref ht x))]
+                                  [else (Var x)])]
                [(hash-has-key? ht x) (Var (hash-ref ht x))]
                [else (Var x)]
                )]
@@ -74,7 +78,9 @@
          ))]
     [(If cnd thn els) (If (uniquify cnd ht) (uniquify thn ht) (uniquify els ht))]
     [(Prim op es) (Prim op (for/list ([i es]) (uniquify i ht)))]
-    [(Apply fun exps) (Apply (uniquify fun ht-fun) (for/list ([e exps]) (uniquify e ht)))]
+    [(Begin es body) (Begin (for/list ([i es]) (uniquify i ht)) (uniquify body ht))]
+    [(HasType exp type) (HasType (uniquify exp ht) type)]
+    [(Apply fun exps) (Apply (uniquify fun ht 1) (for/list ([e exps]) (uniquify e ht 1)))]
     [(Program info body) (Program info (uniquify body ht))]
     [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs]) (uniquify e ht)))]
     [(Def name params rty info body) (let ([name_new (gensym name)]
@@ -89,6 +95,11 @@
                                          (Def name_new params_new rty info (uniquify body ht))
                                          ))]
     [_ (error "Nothing matches")]))
+
+(define (uq p)
+  ;(display-all (uniquify p))
+  (uniquify p)
+  )
 
 ;(define func_names (list->set(hash-values ht-fun)))
 
@@ -282,10 +293,11 @@
   `( 
     ;; Uncomment the following passes as you finish them.
     ("shrink", shrink, interp-Lfun, type-check-Lfun)
-    ("uniquify" ,uniquify ,interp-Lfun ,type-check-Lfun)
-    ("reveal-functions" ,reveal-functions ,interp-Lfun ,type-check-Lfun)
-    ("remove complex opera*" ,remove-complex-opera* ,interp-Lfun, type-check-Lfun)
-    ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cfun)
+    ("uniquify" ,uq ,interp-Lfun ,type-check-Lfun)
+    ;("reveal_functions" ,reveal_functions ,interp-Lfun-prime ,type-check-Lfun)
+    ;("reveal-functions" ,reveal-functions ,interp-Lfun-prime ,type-check-Lfun)
+    ;("remove complex opera*" ,remove-complex-opera* ,interp-Lfun, type-check-Lfun)
+    ;("explicate control" ,explicate-control ,interp-Cif ,type-check-Cfun)
     ;("instruction selection", select_instructions, interp-pseudo-x86-0)
     ;("uncover life", uncover_live, interp-x86-0)
     ;("build interference", build_interference, interp-x86-0)
