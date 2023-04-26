@@ -7,12 +7,14 @@
 (require "interp-Cif.rkt")
 (require "interp-Cfun.rkt")
 (require "interp-Lfun.rkt")
+(require "interp-Cvar.rkt")
 (require "interp.rkt")
 (require "type-check-Lvar.rkt")
 (require "type-check-Lif.rkt")
 (require "type-check-Cif.rkt")
 (require "type-check-Lfun.rkt")
 (require "type-check-Cfun.rkt")
+(require "type-check-Cvar.rkt")
 (require "utilities.rkt")
 (require "priority_queue.rkt")
 (require "multigraph.rkt")
@@ -917,46 +919,16 @@
 (define compiler-passes
   `( 
     ;; Uncomment the following passes as you finish them.
-    ("shrink", shrink, interp-Lfun, type-check-Lfun)
-    ("uniquify" ,uniquify ,interp-Lfun ,type-check-Lfun)
-    ("reveal-functions" ,reveal-functions ,interp-Lfun ,type-check-Lfun)
-    ("remove complex opera*" ,remove-complex-opera* ,interp-Lfun, type-check-Lfun)
-    ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cfun)
-    ("instruction selection", select_instructions, interp-pseudo-x86-3)
-    ("uncover live", uncover_live, interp-x86-3)
-    ("build interference", build_interference, interp-x86-3)
-    ("allocate registers", allocate_registers, interp-x86-3)
-    ("assign homes", assign_homes, interp-x86-3)
+    ("shrink", shrink, interp-Lvar, type-check-Lvar)
+    ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
+    ("reveal-functions" ,reveal-functions ,interp-Lvar ,type-check-Lvar)
+    ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar, type-check-Lvar)
+    ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
+    ("instruction selection", select_instructions, interp-pseudo-x86-1)
+    ("uncover live", uncover_live, interp-x86-1)
+    ("build interference", build_interference, interp-x86-1)
+    ("allocate registers", allocate_registers, interp-x86-1)
+    ("assign homes", assign_homes, interp-x86-1)
     ;("patch instructions", patch_instructions, interp-x86-0)
     ;("prelude and conclusion", prelude-and-conclusion, interp-x86-0)
     ))
-
-;(define compiler-passes
-
-;  `( 
-
-;; Uncomment the following passes as you finish them.
-
-;   ("shrink", shrink, interp-Lif, type-check-Lif)
-
-;   ("uniquify" ,uniquify ,interp-Lif ,type-check-Lif)
-
-;   ("remove complex opera*" ,remove-complex-opera* ,interp-Lif ,type-check-Lif)
-
-;  ("explicate control" ,explicate-control ,interp-Cif ,type-check-Cif)
-
-; ("instruction selection", select_instructions, interp-pseudo-x86-1)
-
-; ("uncover live", uncover_live, interp-x86-1)
-
-; ("build interference", build_interference, interp-x86-1)
-
-; ("allocate registers", allocate_registers, interp-x86-1)
-
-; ("assign homes", assign_homes, interp-x86-1)
-
-; ("patch instructions", patch_instructions, interp-x86-1)
-
-; ("prelude and conclusion", prelude-and-conclusion, interp-x86-1)
-
-; ))

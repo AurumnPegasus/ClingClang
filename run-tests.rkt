@@ -9,7 +9,7 @@
 (require "interp.rkt")
 (require "compiler.rkt")
 (require "type-check-Lif.rkt")
-
+(require "type-check-Lvar.rkt")
 ;; (debug-level 1)
 ;; (AST-output-syntax 'concrete-syntax)
 
@@ -30,5 +30,5 @@
 
 ;(interp-tests "cond" #f compiler-passes interp-Lif "cond_test" (tests-for "cond"))
 ;(compiler-tests "cond" #f compiler-passes "cond_test" (tests-for "cond"))
-(interp-tests "cond" #f compiler-passes interp-Lif "cond_test" (tests-for "cond"))
-(compiler-tests "cond" #f compiler-passes "cond_test" (tests-for "cond"))
+(interp-tests "var" #f compiler-passes interp-Lvar "var_test" (tests-for "var"))
+(compiler-tests "var" #f compiler-passes "var_test" (tests-for "var"))
