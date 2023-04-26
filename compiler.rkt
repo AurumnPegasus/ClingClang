@@ -8,6 +8,7 @@
 (require "interp-Cfun.rkt")
 (require "interp-Lfun.rkt")
 (require "interp-Cvar.rkt")
+(require "interp-Lfun-prime.rkt")
 (require "interp.rkt")
 (require "type-check-Lvar.rkt")
 (require "type-check-Lif.rkt")
@@ -108,12 +109,15 @@
 (define ht-fun (make-hash))
 (define ht-fun-len (make-hash))
 
-(define (uniquify p [ht (make-hash)] )
-  ;(display-all "p: " p)
+(define (uniquify p [ht (make-hash)] [flag 0])
   (match p
     [(Int n) (Int n)]
     [(Bool b) (Bool b)]
     [(Var x) (cond
+               [(equal? flag 1) (cond
+                                  [(hash-has-key? ht-fun x) (Var (hash-ref ht-fun x))]
+                                  [(hash-has-key? ht x) (Var (hash-ref ht x))]
+                                  [else (Var x)])]
                [(hash-has-key? ht x) (Var (hash-ref ht x))]
                [else (Var x)]
                )]
@@ -125,7 +129,9 @@
          ))]
     [(If cnd thn els) (If (uniquify cnd ht) (uniquify thn ht) (uniquify els ht))]
     [(Prim op es) (Prim op (for/list ([i es]) (uniquify i ht)))]
-    [(Apply fun exps) (Apply (uniquify fun ht-fun) (for/list ([e exps]) (uniquify e ht)))]
+    [(Begin es body) (Begin (for/list ([i es]) (uniquify i ht)) (uniquify body ht))]
+    [(HasType exp type) (HasType (uniquify exp ht) type)]
+    [(Apply fun exps) (Apply (uniquify fun ht 1) (for/list ([e exps]) (uniquify e ht 1)))]
     [(Program info body) (Program info (uniquify body ht))]
     [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs]) (uniquify e ht)))]
     [(Def name params rty info body) (let ([name_new (gensym name)]
@@ -140,6 +146,11 @@
                                          (Def name_new params_new rty info (uniquify body ht))
                                          ))]
     [_ (error "Nothing matches")]))
+
+(define (uq p)
+  ;(display-all (uniquify p))
+  (uniquify p)
+  )
 
 ;(define func_names (list->set(hash-values ht-fun)))
 
@@ -158,6 +169,56 @@
     [(Def name params rty info body) (Def name params rty info (reveal-functions body))]
     [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs]) (reveal-functions e)))]
     [_ p]))
+
+;; limit functions
+(define (limit-functions p)
+  
+  (define (get-rest lst)
+    (cdr (cdr (cdr (cdr (cdr lst))))))
+
+
+  (define (convert-exp e ht)
+    (match e
+      [(Var x) (cond
+                 [(hash-has-key? ht x) (hash-ref ht x)]
+                 [else (Var x)])]
+      [(If cnd thn els) (If (convert-exp cnd ht) (convert-exp thn ht) (convert-exp els ht))]
+      [(Let x exp body) (Let x (convert-exp exp ht) (convert-exp body ht))]
+      [(HasType exp type) (HasType (convert-exp exp ht) type)]
+      [(Prim op es) (Prim op (for/list ([e es]) (convert-exp e ht)))]
+      [(Apply fun exps) (Apply (convert-exp fun ht) (for/list ([e exps]) (convert-exp e ht)))]
+      [_ e]))
+
+  (define (get-convert-dict params [ht (make-hash)] )
+    (let ([cnt 0])
+      (begin
+        (for ([p params])
+          (begin
+            (cond
+              [(>= cnt 5) (hash-set! ht (first p) (Prim `vector-ref (list (Var `tup) (Int (- cnt 5)))))])
+            (set! cnt (+ cnt 1))))
+        ht)))
+  
+  (match p
+    [(Let x exp body) (Let x (limit-functions exp) (limit-functions body))]
+    [(Prim op es) (Prim op (for/list ([e es]) (limit-functions e)))]
+    [(If cnd thn els) (If (limit-functions cnd) (limit-functions thn) (limit-functions els))]
+    [(HasType exp type) (HasType (limit-functions exp) type)]
+    [(Apply fun exps) (Apply (limit-functions fun) (cond
+                                                     [(<= (length exps) 6) exps]
+                                                     [else
+                                                      (append (take exps 5) (list (Prim `vector (get-rest exps))))]))]
+    [(Def name params rty info body)
+     (let ([nparams (cond
+                      [(<= (length params) 6) params]
+                      [else
+                       (append (take params 5) (list (append `(tup : ) (list (append `(Vector) (map third (get-rest params)))))))])])
+       (let ([cdict (get-convert-dict params)])
+         (let ([nbody (convert-exp body cdict)])
+           (Def name nparams rty info (limit-functions nbody)))))]
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (limit-functions def)))]
+    [_ p]
+    ))
 
 ;; remove-complex-opera* : R1 -> R1
 (define (remove-complex-opera* p)
@@ -315,8 +376,8 @@
                                                                      (string-append
                                                                       (symbol->string name) (symbol->string 'start))))
                                                       (explicate-control-e body (string->symbol
-                                                                                 (string-append
-                                                                                  (symbol->string name) (symbol->string 'start))))
+                                                                                        (string-append
+                                                                                         (symbol->string name) (symbol->string 'start))))
                                                       (let ([block-keys (hash-keys all-blocks)])
                                                         (for ([key block-keys])
                                                           (hash-set! all-blocks key (getSeqGo (hash-ref all-blocks key)))))
@@ -402,6 +463,7 @@
   (match p
     [(CProgram info all-blocks) (X86Program info
                                             (begin
+                                              (display-all "here")
                                               (let ([block-keys (hash-keys all-blocks)])
                                                 (for ([key block-keys])
                                                   (hash-set! all-blocks key (Block '() (convert (hash-ref all-blocks key))))
@@ -920,8 +982,9 @@
   `( 
     ;; Uncomment the following passes as you finish them.
     ("shrink", shrink, interp-Lvar, type-check-Lvar)
-    ("uniquify" ,uniquify ,interp-Lvar ,type-check-Lvar)
-    ("reveal-functions" ,reveal-functions ,interp-Lvar ,type-check-Lvar)
+    ("uniquify" ,uq ,interp-Lvar ,type-check-Lvar)
+    ("reveal_functions" ,reveal-functions ,interp-Lvar ,type-check-Lvar)
+    ("limit_functions" ,limit-functions ,interp-Lvar, type-check-Lvar)
     ("remove complex opera*" ,remove-complex-opera* ,interp-Lvar, type-check-Lvar)
     ("explicate control" ,explicate-control ,interp-Cvar ,type-check-Cvar)
     ("instruction selection", select_instructions, interp-pseudo-x86-1)
