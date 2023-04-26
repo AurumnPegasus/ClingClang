@@ -45,6 +45,7 @@
     [(Prim op es) (Prim op (for/list ([i es]) (shrink i)))]
     [(If cnd thn els) (If (shrink cnd) (shrink thn) (shrink els))]
     [(Let x exp body) (Let x (shrink exp) (shrink body))]
+    [(Begin es body) (Begin (for/list ([e es]) (shrink e)) (shrink body))]
     [(ProgramDefsExp info defs exp) (ProgramDefs info
                                                  (append (for/list ([def defs]) (shrink def))
                                                          (list (Def `main `() `Integer `() (shrink exp)))))]
@@ -80,6 +81,7 @@
     [(Prim op es) (Prim op (for/list ([i es]) (uniquify i ht)))]
     [(Begin es body) (Begin (for/list ([i es]) (uniquify i ht)) (uniquify body ht))]
     [(HasType exp type) (HasType (uniquify exp ht) type)]
+    [(Begin es body) (Begin (for/list ([e es]) (uniquify e ht)) (uniquify body ht))]
     [(Apply fun exps) (Apply (uniquify fun ht 1) (for/list ([e exps]) (uniquify e ht 1)))]
     [(Program info body) (Program info (uniquify body ht))]
     [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs]) (uniquify e ht)))]
@@ -114,6 +116,7 @@
     [(Let x e body) (Let x (reveal-functions e) (reveal-functions body))]
     [(If cnd thn els) (If (reveal-functions cnd) (reveal-functions thn) (reveal-functions els))]
     [(Prim op es) (Prim op (for/list ([e es]) (reveal-functions e)))]
+    [(Begin es body) (Begin (for/list ([e es]) (reveal-functions e)) (reveal-functions body))]
     [(Apply (Var fun) exps) (Apply (FunRef fun (length exps)) (for/list ([e exps]) (reveal-functions e)))]
     [(Def name params rty info body) (Def name params rty info (reveal-functions body))]
     [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs]) (reveal-functions e)))]
@@ -152,6 +155,7 @@
     [(Let x exp body) (Let x (limit-functions exp) (limit-functions body))]
     [(Prim op es) (Prim op (for/list ([e es]) (limit-functions e)))]
     [(If cnd thn els) (If (limit-functions cnd) (limit-functions thn) (limit-functions els))]
+    [(Begin es body) (Begin (for/list ([e es]) (limit-functions e)) (limit-functions body))]
     [(HasType exp type) (HasType (limit-functions exp) type)]
     [(Apply fun exps) (Apply (limit-functions fun) (cond
                                                      [(<= (length exps) 6) exps]
@@ -168,6 +172,36 @@
     [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (limit-functions def)))]
     [_ p]
     ))
+
+;; expose-allocation
+
+(define (expose-allocation p)
+  (match p
+    [(If cnd thn els) (If (expose-allocation cnd) (expose-allocation thn) (expose-allocation els))]
+    [(Let x exp body) (Let x (expose-allocation exp) (expose-allocation body))]
+    [(Begin es body) (Begin (for/list ([e es]) (expose-allocation e)) (expose-allocation body))]
+    [(Prim op es) (Prim op (for/list ([e es]) (expose-allocation e)))]
+    [(HasType exp type) (let ([exps (Prim-arg* exp)])
+                          (let ([nexps (for/list ([e exps]) (expose-allocation e))] [n (length exps)])
+                            (let ([asize (* 8 (+ 1 n))])
+                              (let ([arg1 (Prim `+ (list (GlobalValue `free_ptr) (Int asize)))] [arg2 (GlobalValue `fromspace_end)])
+                                (let ([if_cond (If (Prim `< (list arg1 arg2)) (Void) (Collect (Int asize)))] [vec-sym (gensym `v)] [allocate (Allocate n type)])
+                                  (let ([cnt 0])
+                                    (let ([initialize_eles
+                                           (begin
+                                             (for/list ([an_exp nexps])
+                                               (define ele (Prim 'vector-set! (list (Var vec-sym) (Int cnt) an_exp)))
+                                               (set! cnt (+ 1 cnt))
+                                               ele))])
+                                      (let ([vector-declaration (Let vec-sym allocate (Begin initialize_eles (Var vec-sym)))])
+                                        (Begin (list if_cond) vector-declaration)))))))))]
+                                                             
+                            
+[(Apply fun exps) (Apply (expose-allocation fun) (for/list ([e exps]) (expose-allocation e)))]
+[(Def name params rty info body) (Def name params rty info (expose-allocation body))]
+[(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (expose-allocation def)))]
+[_ p]
+))
 
 ;; remove-complex-opera* : R1 -> R1
 (define (remove-complex-opera* p)
@@ -346,6 +380,7 @@
     ("uniquify" ,uq ,interp-Lfun ,type-check-Lfun)
     ("reveal_functions" ,reveal-functions ,interp-Lfun-prime ,type-check-Lfun)
     ("limit_functions" ,limit-functions ,interp-Lfun-prime ,type-check-Lfun)
+    ("expose_allocation" ,expose-allocation ,interp-Lfun-prime ,type-check-Lfun)
     ;("remove complex opera*" ,remove-complex-opera* ,interp-Lfun, type-check-Lfun)
     ;("explicate control" ,explicate-control ,interp-Cif ,type-check-Cfun)
     ;("instruction selection", select_instructions, interp-pseudo-x86-0)
