@@ -119,6 +119,56 @@
     [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs]) (reveal-functions e)))]
     [_ p]))
 
+;; limit functions
+(define (limit-functions p)
+  
+  (define (get-rest lst)
+    (cdr (cdr (cdr (cdr (cdr lst))))))
+
+
+  (define (convert-exp e ht)
+    (match e
+      [(Var x) (cond
+                 [(hash-has-key? ht x) (hash-ref ht x)]
+                 [else (Var x)])]
+      [(If cnd thn els) (If (convert-exp cnd ht) (convert-exp thn ht) (convert-exp els ht))]
+      [(Let x exp body) (Let x (convert-exp exp ht) (convert-exp body ht))]
+      [(HasType exp type) (HasType (convert-exp exp ht) type)]
+      [(Prim op es) (Prim op (for/list ([e es]) (convert-exp e ht)))]
+      [(Apply fun exps) (Apply (convert-exp fun ht) (for/list ([e exps]) (convert-exp e ht)))]
+      [_ e]))
+
+  (define (get-convert-dict params [ht (make-hash)] )
+    (let ([cnt 0])
+      (begin
+        (for ([p params])
+          (begin
+            (cond
+              [(>= cnt 5) (hash-set! ht (first p) (Prim `vector-ref (list (Var `tup) (Int (- cnt 5)))))])
+            (set! cnt (+ cnt 1))))
+        ht)))
+  
+  (match p
+    [(Let x exp body) (Let x (limit-functions exp) (limit-functions body))]
+    [(Prim op es) (Prim op (for/list ([e es]) (limit-functions e)))]
+    [(If cnd thn els) (If (limit-functions cnd) (limit-functions thn) (limit-functions els))]
+    [(HasType exp type) (HasType (limit-functions exp) type)]
+    [(Apply fun exps) (Apply (limit-functions fun) (cond
+                                                     [(<= (length exps) 6) exps]
+                                                     [else
+                                                      (append (take exps 5) (list (Prim `vector (get-rest exps))))]))]
+    [(Def name params rty info body)
+     (let ([nparams (cond
+                      [(<= (length params) 6) params]
+                      [else
+                       (append (take params 5) (list (append `(tup : ) (list (append `(Vector) (map third (get-rest params)))))))])])
+       (let ([cdict (get-convert-dict params)])
+         (let ([nbody (convert-exp body cdict)])
+           (Def name nparams rty info (limit-functions nbody)))))]
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (limit-functions def)))]
+    [_ p]
+    ))
+
 ;; remove-complex-opera* : R1 -> R1
 (define (remove-complex-opera* p)
   
@@ -266,14 +316,14 @@
                                                     (begin
                                                       (set! all-blocks (make-hash))
                                                       (create-block (string->symbol
-                                                                          (string-append
-                                                                           (symbol->string name) (symbol->string 'start))))
+                                                                     (string-append
+                                                                      (symbol->string name) (symbol->string 'start))))
                                                       (explicate-control-e body (string->symbol
-                                                                          (string-append
-                                                                           (symbol->string name) (symbol->string 'start))))
+                                                                                 (string-append
+                                                                                  (symbol->string name) (symbol->string 'start))))
                                                       (let ([block-keys (hash-keys all-blocks)])
                                                         (for ([key block-keys])
-                                                            (hash-set! all-blocks key (getSeqGo (hash-ref all-blocks key)))))
+                                                          (hash-set! all-blocks key (getSeqGo (hash-ref all-blocks key)))))
                                                       ;(display-all all-blocks)
                                                       (Def name params rty info1 all-blocks))])))]
     [(Program info body) (CProgram info
@@ -294,8 +344,8 @@
     ;; Uncomment the following passes as you finish them.
     ("shrink", shrink, interp-Lfun, type-check-Lfun)
     ("uniquify" ,uq ,interp-Lfun ,type-check-Lfun)
-    ;("reveal_functions" ,reveal_functions ,interp-Lfun-prime ,type-check-Lfun)
-    ;("reveal-functions" ,reveal-functions ,interp-Lfun-prime ,type-check-Lfun)
+    ("reveal_functions" ,reveal-functions ,interp-Lfun-prime ,type-check-Lfun)
+    ("limit_functions" ,limit-functions ,interp-Lfun-prime ,type-check-Lfun)
     ;("remove complex opera*" ,remove-complex-opera* ,interp-Lfun, type-check-Lfun)
     ;("explicate control" ,explicate-control ,interp-Cif ,type-check-Cfun)
     ;("instruction selection", select_instructions, interp-pseudo-x86-0)
