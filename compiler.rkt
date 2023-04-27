@@ -315,61 +315,88 @@
       instr)
     )
     
-  (define (explicate-control-e e blk)
+  (define (explicate-control-Tail e blk)
     (match e
       [(Int n) (add_to blk (Return e))]
       [(Var x) (add_to blk (Return e))]
       [(Bool b) (add_to blk (Return e))]
       [(Prim op es) (add_to blk (Return e))]
+      [(Collect n) (add_to blk (Return e))]
       [(Let x exp body)
        (begin
-         (explicate-control-f exp x null blk)
-         (explicate-control-e body blk))]
+         (explicate-control-Let exp x null blk)
+         (explicate-control-Tail body blk))]
+      [(Begin es body)
+       (let ([tail (explicate-control-Tail body blk)]) (foldr explicate-control-Begin tail es blk))]
       [(If cnd thn els) (let ([bthn (gensym 'block)] [bels (gensym 'block)])
                           (begin
                             (create-block bthn)
                             (create-block bels)
-                            (explicate-control-e thn bthn)
-                            (explicate-control-e els bels)
-                            (explicate-control-g cnd null null blk bthn bels)
+                            (explicate-control-Tail thn bthn)
+                            (explicate-control-Tail els bels)
+                            (explicate-control-If cnd null null blk bthn bels)
                             ))]
       [(Apply fun exps) (add_to blk (TailCall fun exps))]
       [_ (add_to blk (Return e))]))
+
+  (define (explicate-control-Begin e cont blk)
+    (match e
+      [(Prim `read (list)) (add_to blk (Seq e cont))]
+      [(Collect n) (add_to blk (Seq e cont))]
+      [(Prim `vector-set! es) (add_to blk (Seq e cont))]
+      [(Let x exp body) (let ([b (explicate-control-Begin body cont blk)])
+                          (explicate-control-Let exp x b blk))]
+      [(If cnd thn els) (let ([bthn (gensym `block)] [bels (gensym `block)])
+                          (begin
+                            (create-block bthn)
+                            (create-block bels)
+                            (explicate-control-Begin thn cont bthn)
+                            (explicate-control-Begin els cont bels)
+                            (explicate-control-If cnd null null blk bthn bels)))]
+      [(Begin es body) (foldr explicate-control-Begin cont (append es (list body)))]
+      [(Apply fn es) (add_to blk (Seq e cont))]
+      [_ cont]))
   
-  (define (explicate-control-f e x body blk)
+  (define (explicate-control-Let e x body blk)
     (match e
       [(Apply fun exps) (add_to blk (Assign (Var x) (Call fun exps)))]
+      [(Begin es b) (let ([tail (explicate-control-Let b x body blk)])
+                           (foldr explicate-control-Begin tail es blk))]
       [(If cnd thn els) (let ([bthn (gensym 'block)] [bels (gensym 'block)])
                           (begin
                             (create-block bthn)
                             (create-block bels)
-                            (explicate-control-f thn x body bthn)
-                            (explicate-control-f els x body bels)
-                            (explicate-control-g cnd null null blk bthn bels)
+                            (explicate-control-Let thn x body bthn)
+                            (explicate-control-Let els x body bels)
+                            (explicate-control-If cnd null null blk bthn bels)
                             ))]
       [_ (cond
            [(null? x) e]
            [(null? body) (add_to blk (Assign (Var x) e))]
            [else (add_to blk (Assign (Var x) e))])]))
 
-  (define (explicate-control-g cnd thn els blk blkthn blkels)
+  (define (explicate-control-If cnd thn els blk blkthn blkels)
     (match cnd
       [(Bool #t) (add_to blk (IfStmt (Prim 'eq? (list cnd cnd)) (Goto blkthn) (Goto blkels)))]
       [(Bool #f) (add_to blk (IfStmt (Prim 'eq? (list cnd cnd)) (Goto blkthn) (Goto blkels)))]
+      ;[(Begin es body) (let* ([tail (explicate-control-If body e1 e2)]) (foldr explicate-effect body es))]
       [(Prim 'not e1) (add_to blk (IfStmt (Prim 'eq? (list cnd (Bool #f))) (Goto blkthn) (Goto blkels)))]
       [(Var x) (add_to blk (IfStmt (Prim 'eq? (list (Var x) (Bool #t))) (Goto blkthn) (Goto blkels)))]
       [(Let x exp body) 
-       (let ([rbody (explicate-control-g body null null blk blkthn blkels)])
-         (let ([rexp (explicate-control-f exp x rbody blk)]) rexp))] 
+       (let ([rbody (explicate-control-If body null null blk blkthn blkels)])
+         (let ([rexp (explicate-control-Let exp x rbody blk)]) rexp))]
+      [(Begin es body)
+       (let ([tail (explicate-control-If body null null blk blkthn blkels)])
+         (foldr explicate-control-Begin tail es blk))]
       [(If cnd1 thn1 els1)
        (let ([bthn1 (gensym 'block)]
              [bels1 (gensym 'block)])
          (begin
            (create-block bthn1)
            (create-block bels1)
-           (explicate-control-g thn1 null null bthn1 blkthn blkels)
-           (explicate-control-g els1 null null bels1 blkthn blkels)
-           (explicate-control-g cnd1 null null blk bthn1 bels1) 
+           (explicate-control-If thn1 null null bthn1 blkthn blkels)
+           (explicate-control-If els1 null null bels1 blkthn blkels)
+           (explicate-control-If cnd1 null null blk bthn1 bels1) 
            ))]
       [(Apply fun exps) (add_to blk (IfStmt (Call fun exps) (Goto blkthn) (Goto blkels)))]
       [_ (add_to blk (IfStmt cnd (Goto blkthn) (Goto blkels)))])
@@ -390,7 +417,7 @@
                                                       (create-block (string->symbol
                                                                      (string-append
                                                                       (symbol->string name) (symbol->string 'start))))
-                                                      (explicate-control-e body (string->symbol
+                                                      (explicate-control-Tail body (string->symbol
                                                                                  (string-append
                                                                                   (symbol->string name) (symbol->string 'start))))
                                                       (let ([block-keys (hash-keys all-blocks)])
@@ -401,7 +428,7 @@
     [(Program info body) (CProgram info
                                    (begin
                                      (create-block 'start)
-                                     (explicate-control-e body 'start)
+                                     (explicate-control-Tail body 'start)
                                      (let ([block-keys (hash-keys all-blocks)])
                                        (for ([key block-keys])
                                          (hash-set! all-blocks key (getSeqGo (hash-ref all-blocks key)))))
