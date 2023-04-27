@@ -41,13 +41,6 @@
 (define (display-all . vs)
   (for-each display (insert-between " " vs)))
 
-(define (is-atomic? a)
-  (match a
-    [(Var x) #t]
-    [(Int n) #t]
-    [(Bool b) #t]
-    [_ #f]))
-
 (define regmap (make-hash `(
                             (rax -1)
                             (-1 rax)
@@ -248,75 +241,63 @@
                                         (Begin (list if_cond) vector-declaration)))))))))]
                                                              
                             
-[(Apply fun exps) (Apply (expose-allocation fun) (for/list ([e exps]) (expose-allocation e)))]
-[(Def name params rty info body) (Def name params rty info (expose-allocation body))]
-[(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (expose-allocation def)))]
-[_ p]
-))
+    [(Apply fun exps) (Apply (expose-allocation fun) (for/list ([e exps]) (expose-allocation e)))]
+    [(Def name params rty info body) (Def name params rty info (expose-allocation body))]
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (expose-allocation def)))]
+    [_ p]
+    ))
 
-;; remove-complex-opera* : R1 -> R1
-(define (remove-complex-opera* p)
-  
-  (define (flatten e [varlst '()])
-    ;(display-all e)
-    (match e
-      [(? is-atomic? i) (list i varlst)]
+;; remove-complex-opera
+(define (is-atomic? a)
+  (match a
+    [(Var x) #t]
+    [(Int n) #t]
+    [(Bool b) #t]
+    [(Void) #t]
+    [_ #f]))
 
-      [(Let x exp body) (list (let ([fb (flatten body)] [fe (flatten exp)])
-                                (begin (set! varlst (append (cadr fe) (list (list x (car fe))) (cadr fb)))
-                                       (car fb))) varlst)]
-      [(If cnd thn els) (list (let ([fcnd (flatten cnd)] [fthn (flatten thn)] [fels (flatten els)])
-                                (begin (set! varlst (append (cadr fcnd) (cadr fthn) (cadr fels)))
-                                       (If (car fcnd) (car fthn) (car fels)))) varlst)]
-      [(Prim 'not es) (list(let ([new_var (gensym 'g)] [ret_lst (flatten (car es))])
-                             (begin (set! varlst (append (cadr ret_lst) (list (list new_var (Prim 'not (list (car ret_lst))))) varlst))
-                                    (Var new_var))
-                             )varlst)]
-      [(Prim op es) (list (Prim op (for/list ([i es])
-                                     (cond
-                                       [(is-atomic? i) i]
-                                       [else
-                                        (let ([new_var (gensym 'g)] [ret_lst (flatten i)])
-                                          (begin (set! varlst (append (cadr ret_lst) (list (list new_var (car ret_lst))) varlst ))
-                                                 (Var new_var))
-                                          )]))) varlst)]
-      [(Apply fun exps) (list (let ([fn (gensym 'g)])
-                                (begin
-                                  (set! varlst (append (list (list fn fun)) varlst))
-                                  (Apply (Var fn) (for/list ([i exps])
-                                                    (cond
-                                                      [(is-atomic? i) i]
-                                                      [else
-                                                       (let ([new_var (gensym 'g)] [ret_lst (flatten i)])
-                                                         (begin (set! varlst (append (cadr ret_lst) (list (list new_var (car ret_lst))) varlst ))
-                                                                (Var new_var))
-                                                         )])))         
-                                  )) varlst)]
-      [(Def name params rty info body)  (list (let ([fbody (flatten body)])
-                                                (begin
-                                                  (set! varlst (append (cadr fbody)))
-                                                  (Def name params rty info (car fbody)))) varlst)]
-      ))
+(define (rco-atom e)
+  (match e
+    [(? is-atomic?) (cons e `())]
+    [(Let x exp body) (let ([ng (gensym `g)])
+                        (cons (Var ng) (append (list (cons x (remove-complex-opera exp))) (list (cons ng (remove-complex-opera body))))))]
+    [(If cnd thn els) (let ([ng (gensym `g)])
+                        (cons (Var ng) (list (cons ng (If (remove-complex-opera cnd) (remove-complex-opera thn) (remove-complex-opera els))))))]
+    [(Allocate n type) (let ([ng (gensym `g)]) (cons (Var ng) (list (cons ng (Allocate n type)))))]
+    [(GlobalValue n) (let ([ng (gensym `g)]) (cons (Var ng) (list (cons ng (GlobalValue n)))))]
+    [(Begin es body) (let ([ng (gensym `g)]) (cons (Var ng) (list (cons ng (Begin
+                                                                            (for/list ([e es]) (remove-complex-opera e))
+                                                                            (remove-complex-opera body))))))]
+    [(FunRef fn es) (let ([ng (gensym `g)]) (cons (Var ng) (list (cons ng (FunRef fn es)))))]
+    [(Apply fn es) (let ([ng (gensym `g)])
+                     (let ([exps (for/list ([e es]) (rco-atom e))] [fexp (rco-atom fn)])
+                       (cons (Var ng) (append (foldr append `() (append (for/list ([e exps]) (cdr e)) (list (cdr fexp))))
+                                              (list (cons ng (Apply (car fexp) (for/list ([e exps]) (car e)))))))))]
+    [(Prim op es) (let ([ng (gensym `g)])
+                    (let ([exps (for/list ([e es]) (rco-atom e))])
+                      (cons (Var ng) (append (foldr append `() (for/list ([e exps]) (cdr e)))
+                                             (list (cons ng (Prim op (for/list ([e exps]) (car e)))))))))]
+    ))
 
-  (define (final-flat e)
-    (let ([fexpr (flatten e)])
-      (define (final-flat-r lst)
-        ;(display-all "fexpr" fexpr)
-        (cond
-          [(null? lst) (car fexpr)]
-          [else     
-           (Let (caar lst) (cadr (car lst)) (final-flat-r (cdr lst)))]))
-      (final-flat-r (cadr fexpr))))
+(define (gen-lets lst)
+  (cond
+    [(= 1 (length lst)) (cdar lst)]
+    [else (Let (caar lst) (cdar lst) (gen-lets (rest lst)))]))
 
+(define (remove-complex-opera p)
   (match p
-    [(ProgramDefs info defs) (ProgramDefs info (for/list ([e defs])
-                                                 (match e
-                                                   [(Def name params rty info body)
-                                                    (Def name params rty info (final-flat body))])))]
-    [(Program info body) (Program info (final-flat body))]
-    )
-  )
+    [(? is-atomic?) p]
+    [(Let x exp body) (Let x (remove-complex-opera exp) (remove-complex-opera body))]
+    [(If cnd thn els) (If (remove-complex-opera cnd) (remove-complex-opera thn) (remove-complex-opera els))]
+    [(ProgramDefs info defs) (ProgramDefs info (for/list ([def defs]) (remove-complex-opera def) ))]
+    [(Begin es body) (Begin (for/list ([e es]) (remove-complex-opera e)) (remove-complex-opera body))]
+    [(Def name params rty info body) (Def name params rty info (remove-complex-opera body))]
+    [(Prim op es) (gen-lets (cdr (rco-atom (Prim op es))))]
+    [(Apply fun exps) (gen-lets (cdr (rco-atom (Apply fun exps))))]
+    [_ p]
+    ))
 
+;; explicate control
 (define (explicate-control p)
 
   (define all-blocks (make-hash))
@@ -410,8 +391,8 @@
                                                                      (string-append
                                                                       (symbol->string name) (symbol->string 'start))))
                                                       (explicate-control-e body (string->symbol
-                                                                                        (string-append
-                                                                                         (symbol->string name) (symbol->string 'start))))
+                                                                                 (string-append
+                                                                                  (symbol->string name) (symbol->string 'start))))
                                                       (let ([block-keys (hash-keys all-blocks)])
                                                         (for ([key block-keys])
                                                           (hash-set! all-blocks key (getSeqGo (hash-ref all-blocks key)))))
@@ -1020,8 +1001,8 @@
     ("reveal_functions" ,reveal-functions ,interp-Lfun-prime ,type-check-Lfun)
     ("limit_functions" ,limit-functions ,interp-Lfun-prime ,type-check-Lfun)
     ("expose_allocation" ,expose-allocation ,interp-Lfun-prime ,type-check-Lfun)
-    ;("remove complex opera*" ,remove-complex-opera* ,interp-Lfun, type-check-Lfun)
-    ;("explicate control" ,explicate-control ,interp-Cif ,type-check-Cfun)
+    ("remove complex opera" ,remove-complex-opera ,interp-Lfun-prime, type-check-Lfun)
+    ("explicate control" ,explicate-control ,interp-Cfun ,type-check-Cfun)
     ;("instruction selection", select_instructions, interp-pseudo-x86-0)
     ;("uncover life", uncover_live, interp-x86-0)
     ;("build interference", build_interference, interp-x86-0)
